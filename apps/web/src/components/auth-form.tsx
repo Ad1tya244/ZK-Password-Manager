@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { api, AuthResponse } from "../lib/api";
+import { api, AuthResponse, VaultItem } from "../lib/api";
 import { EncryptionService } from "../utils/encryption.utils";
+import { bufferToBase64 } from "@zk/crypto/client";
+
 
 export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     const [isLogin, setIsLogin] = useState(true);
@@ -25,6 +27,51 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
         return null;
     };
 
+    const handleMigration = async (vekResult: any) => {
+        await api.post("/auth/vek", {
+            encryptedVEK: vekResult.encryptedVEK,
+            vekIV: vekResult.iv,
+            vekAuthTag: vekResult.authTag
+        });
+
+        // MIGRATION: Re-encrypt existing vault items
+        try {
+            const vaultRes = await api.get<VaultItem[]>("/vault");
+            const items = vaultRes.data;
+
+            if (items.length > 0) {
+                console.log("Migrating vault items to VEK...");
+                await Promise.all(items.map(async (item) => {
+                    try {
+                        // 1. Decrypt with Legacy KEK
+                        const plaintext = await EncryptionService.decryptLegacy(item.encryptedBlob, item.iv, item.authTag);
+
+                        // 2. Encrypt with New VEK
+                        const { ciphertext, iv } = await EncryptionService.encrypt(plaintext);
+
+                        const fullBuffer = new Uint8Array(ciphertext);
+                        const tagLength = 16;
+                        const dataLength = fullBuffer.length - tagLength;
+                        const encryptedData = fullBuffer.slice(0, dataLength);
+                        const tag = fullBuffer.slice(dataLength);
+
+                        // 3. Update Item
+                        await api.put(`/vault/${item.id}`, {
+                            encryptedBlob: bufferToBase64(encryptedData),
+                            iv: bufferToBase64(iv),
+                            authTag: bufferToBase64(tag),
+                        });
+                    } catch (err) {
+                        console.error("Failed to migrate item:", item.id, err);
+                    }
+                }));
+                console.log("Migration complete.");
+            }
+        } catch (e) {
+            console.error("Migration failed:", e);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -35,12 +82,23 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             if (isLogin) {
                 if (require2fa) {
                     // Verify TOTP for Login
-                    await api.post("/auth/verify-2fa", { username, token: otp });
-                    await EncryptionService.initSession(password, username);
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string } }>("/auth/verify-2fa", { username, token: otp });
+                    const token = res.data.token;
+                    localStorage.setItem("token", token);
+
+                    const vekResult = await EncryptionService.initSession(password, username, {
+                        encryptedVEK: res.data.user?.encryptedVEK,
+                        iv: res.data.user?.vekIV,
+                        authTag: res.data.user?.vekAuthTag
+                    });
+
+                    if (vekResult) {
+                        await handleMigration(vekResult);
+                    }
                     onLogin();
                 } else {
                     // Initial Login Request
-                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string }>("/auth/login", { username, password });
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string } }>("/auth/login", { username, password });
                     if (res.data.require2fa) {
                         setRequire2fa(true);
                         setStatusMessage(res.data.message || "Enter code from Google Authenticator");
@@ -48,8 +106,18 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                         return;
                     }
 
-                    // Direct login if 2FA not enabled (legacy/fallback)
-                    await EncryptionService.initSession(password, username);
+                    const token = res.data.token;
+                    localStorage.setItem("token", token);
+
+                    const vekResult = await EncryptionService.initSession(password, username, {
+                        encryptedVEK: res.data.user?.encryptedVEK,
+                        iv: res.data.user?.vekIV,
+                        authTag: res.data.user?.vekAuthTag
+                    });
+
+                    if (vekResult) {
+                        await handleMigration(vekResult);
+                    }
                     onLogin();
                 }
             } else {

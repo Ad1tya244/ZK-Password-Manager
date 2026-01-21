@@ -11,9 +11,13 @@ export const api = axios.create({
 });
 
 export interface AuthResponse {
+    token: string;
     user: {
         id: string;
         username: string;
+        encryptedVEK?: string;
+        vekIV?: string;
+        vekAuthTag?: string;
     };
     require2fa?: boolean;
     message?: string;

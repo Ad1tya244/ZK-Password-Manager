@@ -1,79 +1,128 @@
-import { createSecureSession, base64ToBuffer, bufferToBase64 } from "@zk/crypto/client";
+import { createSecureSession, base64ToBuffer, bufferToBase64, deriveKey, generateRandomKey, exportKey, importKey, encryptValue, decryptValue } from "@zk/crypto/client";
 
 // Singleton to hold the session
-let session: Awaited<ReturnType<typeof createSecureSession>> | null = null;
+interface Session {
+    kek: CryptoKey; // Key Encryption Key (derived from password)
+    vek: CryptoKey; // Vault Encryption Key (random, wrapped by KEK)
+}
+
+let session: Session | null = null;
 
 export const EncryptionService = {
     /**
-     * Initialize session with Master Password.
-     * This is the ONLY time the password is used.
+     * Initialize session with Master Password and VEK data.
+     * If VEK data is missing, we must generate it (Migrate).
      */
-    initSession: async (password: string, saltBase64: string) => { // Salt is unused effectively if we rely on Argon2 hash salt, but for PBKDF2 we need one.
-        // Wait, the backend returns the user, but does it return the salt?
-        // In our Architecture, we might need the salt for PBKDF2.
-        // Let's assume for now we use a deterministic salt or fetch it.
-        // Actually, good practice: Use email as salt OR fetch specific salt for key derivation if we stored it.
-        // We stored `salt` in User model, but we need to fetch it during login phase BEFORE authenticating fully?
-        // OR we authenticate, get the salt, then derive the key? 
-        // Actually, for ZK, we usually derive key -> login? No, we login (hashed password) -> get data.
-        // But wait, the password sent to server is Hashed. 
-        // The Master Key is derived from the SAME password but likely with different parameters or salt.
-        // Let's use the user's ID or a fixed salt for this MVP to keep it simple, or better:
-        // We can ask the user for "Encryption Salt" or just use email.
-        // For this implementation, I will use a deterministic derivation from Email to safeguard against simple rainbow tables if we don't have a stored salt accessible before auth.
-        // BETTER: The user object returned from /me or login has the `id`. We can use that? 
-        // Actually, `deriveKey` needs a salt.
-        // Let's assume we pass in the salt.
-
-        // Changing approach: We will use a fixed application-wide salt for this MVP demonstration for Key Derivation 
-        // OR allow the user to provide it. 
-        // To match strict ZK, we should store a random salt for the user that is PUBLIC (can be fetched).
-        // For now, I'll decode the provided salt (if any) or generate one.
-
-        // Wait, I implemented `deriveKey` taking a salt.
-        // Let's rely on the caller to provide the salt.
+    initSession: async (
+        password: string,
+        saltBase64: string,
+        vekData?: { encryptedVEK: string, iv: string, authTag: string }
+    ) => {
         const salt = new TextEncoder().encode(saltBase64 || "default-salt-12345678");
-        // Ideally we fetch the user's salt column.
-        session = await createSecureSession(password, salt);
+        const kek = await deriveKey(password, salt);
+        let vek: CryptoKey;
+
+        // If we have a stored VEK, decrypt it
+        if (vekData && vekData.encryptedVEK) {
+            const cypherBuf = base64ToBuffer(vekData.encryptedVEK);
+            const tagBuf = base64ToBuffer(vekData.authTag);
+            const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
+            combined.set(cypherBuf);
+            combined.set(tagBuf, cypherBuf.length);
+
+            // Decrypt the wrapping to get raw VEK bytes
+            const dummyIv = base64ToBuffer(vekData.iv); // Actually decryptValue takes BufferSource
+
+            // KEK decrypts the wrapped VEK
+            // We reuse decryptValue but it assumes string return. 
+            // We need to implement raw decryption in client.ts or just handle it here?
+            // client.ts decryptValue returns string. We encrypted ArrayBuffer.
+            // We need to handle this.
+            // Wait, `encryptValue` in client.ts now accepts ArrayBuffer, but `decryptValue` returns string?
+            // I should have checked decryptValue.
+            // If I updated encryptValue, I should assume I might need to update decryptValue OR just use raw webcrypto here for unwrapping.
+            // It's cleaner to use raw webcrypto for the specific task of unwrapping if the helper is strictly string-based.
+
+            const rawVek = await window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: base64ToBuffer(vekData.iv) as BufferSource },
+                kek,
+                combined
+            );
+
+            vek = await importKey(rawVek);
+        } else {
+            // New VEK Generation (Migration)
+            vek = await generateRandomKey();
+        }
+
+        session = { kek, vek };
+
+        // Return the wrapped VEK so caller can save it
+        if (!vekData || !vekData.encryptedVEK) {
+            const rawVek = await exportKey(vek);
+            const { ciphertext, iv } = await encryptValue(kek, rawVek);
+
+            // Split tag (last 16 bytes)
+            const full = new Uint8Array(ciphertext);
+            const tagLen = 16;
+            const dataLen = full.length - tagLen;
+            const encryptedVEK = full.slice(0, dataLen);
+            const authTag = full.slice(dataLen);
+
+            return {
+                encryptedVEK: bufferToBase64(encryptedVEK),
+                iv: bufferToBase64(iv),
+                authTag: bufferToBase64(authTag)
+            };
+        }
+        return null;
     },
 
+    /**
+     * Encrypts data using the VEK (Vault Key).
+     */
     encrypt: async (data: string) => {
         if (!session) throw new Error("Session not initialized");
-        return await session.encrypt(data);
+        // Encrypt using VEK, not KEK
+        return await encryptValue(session.vek, data);
     },
 
+    /**
+     * Decrypts buffer using the VEK.
+     */
     decrypt: async (encryptedBlob: string, iv: string, authTag: string) => {
-        // Note: Our backend stores authTag separately, but AES-GCM in WebCrypto usually appends tag to ciphertext.
-        // My `client.ts` `encryptValue` returned { ciphertext, iv }. 
-        // WebCrypto's `encrypt` returns ciphertext which INCLUDES the tag at the end for AES-GCM.
-        // My backend schema has `authTag` column.
-        // If `client.ts` uses standard `subtle.encrypt` with AES-GCM, the result implies (Ciphertext + Tag).
-        // So `encryptedBlob` likely contains the tag at the end.
-        // I need to check `client.ts` implementation details again.
-
-        // Checking `client.ts` from memory:
-        // It returns `ciphertext` (which includes tag in WebCrypto AES-GCM) and `iv`.
-        // It does NOT separate the tag physically in the return object unless I sliced it.
-        // I did NOT slice it.
-        // So `ciphertext` = Encrypted Data + Tag.
-        // My Backend Schema has `authTag`.
-        // I should probably ignore `authTag` column in DB or store the last 16 bytes there if I want to be pedantic,
-        // OR just store everything in `encryptedBlob` and leave `authTag` empty/dummy.
-        // Requirements said: "vault table with ... auth_tag".
-        // I will split the buffer for the DB and join it for decryption.
-
         if (!session) throw new Error("Session not initialized");
 
-        // Reconstruct the full buffer: Ciphertext + Tag
         const cypherBuf = base64ToBuffer(encryptedBlob);
         const tagBuf = base64ToBuffer(authTag);
 
-        // WebCrypto expects Tag appended to Ciphertext.
         const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
         combined.set(cypherBuf);
         combined.set(tagBuf, cypherBuf.length);
 
-        return await session.decrypt(combined.buffer, base64ToBuffer(iv));
+        return await decryptValue(session.vek, combined.buffer, base64ToBuffer(iv));
+    },
+
+    /**
+     * Decrypts buffer using the KEK (Legacy Migration).
+     */
+    decryptLegacy: async (encryptedBlob: string, iv: string, authTag: string) => {
+        if (!session) throw new Error("Session not initialized");
+
+        const cypherBuf = base64ToBuffer(encryptedBlob);
+        const tagBuf = base64ToBuffer(authTag);
+
+        const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
+        combined.set(cypherBuf);
+        combined.set(tagBuf, cypherBuf.length);
+
+        return await decryptValue(session.kek, combined.buffer, base64ToBuffer(iv));
+    },
+
+    // Helper to get access to KEK for legacy migration if needed
+    getLegacyKEK: () => {
+        if (!session) throw new Error("Session not initialized");
+        return session.kek;
     },
 
     clearSession: () => {

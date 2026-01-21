@@ -22,6 +22,12 @@ dist
 .env.production.local
 *.env
 
+# Secrets & Certificates
+*.pem
+*.crt
+*.key
+*.pfx
+
 # Turbo
 .turbo
 

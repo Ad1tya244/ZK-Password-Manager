@@ -3,6 +3,9 @@ import * as authService from "../services/auth.service";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
+// Helper to handle Buffer conversion
+const toBuffer = (base64: string) => Buffer.from(base64, "base64");
+
 export const register = async (req: Request, res: Response) => {
     try {
         const { username, password } = req.body;
@@ -150,5 +153,28 @@ export const deleteAccount = async (req: Request, res: Response) => {
         res.status(200).json({ message: "Account deleted successfully" });
     } catch (error) {
         res.status(500).json({ error: "Failed to delete account" });
+    }
+};
+
+export const saveVEK = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user.userId;
+        const { encryptedVEK, vekIV, vekAuthTag } = req.body;
+
+        if (!encryptedVEK || !vekIV || !vekAuthTag) {
+            return res.status(400).json({ error: "Missing VEK fields" });
+        }
+
+        await authService.saveVEK(
+            userId,
+            toBuffer(encryptedVEK),
+            toBuffer(vekIV),
+            toBuffer(vekAuthTag)
+        );
+
+        return res.json({ message: "VEK saved successfully" });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
     }
 };

@@ -70,7 +70,15 @@ export const loginUser = async (username: string, password: string): Promise<{ u
         throw new Error("Invalid password");
     }
 
-    return { user, require2fa: !!user.twoFactorSecret };
+    return {
+        user: {
+            ...user,
+            encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString('base64') : null,
+            vekIV: user.vekIV ? user.vekIV.toString('base64') : null,
+            vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString('base64') : null,
+        },
+        require2fa: !!user.twoFactorSecret
+    };
 };
 
 export const deleteUser = async (userId: string, password?: string) => {
@@ -85,5 +93,16 @@ export const deleteUser = async (userId: string, password?: string) => {
 
     return await prisma.user.delete({
         where: { id: userId },
+    });
+};
+
+export const saveVEK = async (userId: string, encryptedVEK: Buffer, iv: Buffer, authTag: Buffer) => {
+    return await prisma.user.update({
+        where: { id: userId },
+        data: {
+            encryptedVEK,
+            vekIV: iv,
+            vekAuthTag: authTag
+        }
     });
 };

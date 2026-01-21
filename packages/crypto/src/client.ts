@@ -59,6 +59,44 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
         keyMaterial,
         { name: "AES-GCM", length: 256 },
         false, // Key is non-extractable! Crucial for security.
+
+        ["encrypt", "decrypt"]
+    );
+}
+
+/**
+ * Generates a random 256-bit AES-GCM key (VEK).
+ */
+export async function generateRandomKey(): Promise<CryptoKey> {
+    return window.crypto.subtle.generateKey(
+        {
+            name: "AES-GCM",
+            length: 256,
+        },
+        true, // extractable (so we can wrap it)
+        ["encrypt", "decrypt"]
+    );
+}
+
+/**
+ * Exports a key to raw bytes.
+ */
+export async function exportKey(key: CryptoKey): Promise<ArrayBuffer> {
+    return window.crypto.subtle.exportKey("raw", key);
+}
+
+/**
+ * Imports a key from raw bytes.
+ */
+export async function importKey(raw: ArrayBuffer): Promise<CryptoKey> {
+    return window.crypto.subtle.importKey(
+        "raw",
+        raw,
+        {
+            name: "AES-GCM",
+            length: 256,
+        },
+        true,
         ["encrypt", "decrypt"]
     );
 }
@@ -70,10 +108,10 @@ export async function deriveKey(password: string, salt: Uint8Array): Promise<Cry
  * @param data - The plaintext data.
  * @returns Object containing ciphertext and IV (Initialization Vector).
  */
-export async function encryptValue(key: CryptoKey, data: string): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> {
+export async function encryptValue(key: CryptoKey, data: string | ArrayBuffer): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> {
     const enc = new TextEncoder();
     const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-    const encodedData = enc.encode(data);
+    const encodedData = typeof data === "string" ? enc.encode(data) : data;
 
     const ciphertext = await window.crypto.subtle.encrypt(
         {

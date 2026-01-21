@@ -14,8 +14,9 @@ This project follows a monorepo architecture managed by [TurboRepo](https://turb
 -   **`packages/shared`**: Shared types and utilities used across the application.
 
 ### Security Model
--   **Zero-Knowledge Architecture:** The master password never leaves the client device. It is used to derive encryption keys locally.
--   **Client-Side Encryption:** Vault items are encrypted on the client side using robust cryptographic primitives before being sent to the server.
+-   **Zero-Knowledge Architecture:** The master password never leaves the client device. It is used to derive a **Key Encryption Key (KEK)** locally.
+-   **Vault Encryption Key (VEK):** A randomly generated key (VEK) is used to encrypt all vault items. This VEK is itself encrypted (wrapped) by the KEK and stored on the server. This allows for changing the master password without re-encrypting the entire vault.
+-   **Client-Side Encryption:** All encryption and decryption happen in the browser (or client app) using robust cryptographic primitives (AES-GCM, Argon2).
 -   **Authentication:** Secure authentication using JWT (JSON Web Tokens) and Argon2 password hashing. Two-Factor Authentication (2FA) is supported via TOTP (Time-based One-Time Password) using Google Authenticator or similar apps.
 
 ## Tech Stack
@@ -123,6 +124,7 @@ To stop the application, press `Ctrl + C` in the terminal where the server is ru
 ## Features
 -   User Registration & Login (Secure Auth)
 -   Two-Factor Authentication (TOTP via Google Authenticator)
+-   **Vault Migration:** Automatic upgrade of legacy encryption to the new VEK architecture upon login.
 -   Create, View, Edit, and Delete Vault Items.
 -   Secure Password Generation
 -   Password Strength Analysis
