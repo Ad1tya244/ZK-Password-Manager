@@ -109,7 +109,15 @@ export const verify2fa = async (req: Request, res: Response) => {
             maxAge: 15 * 60 * 1000,
         });
 
-        return res.json({ user });
+        return res.json({
+            user: {
+                ...user,
+                encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString('base64') : null,
+                vekIV: user.vekIV ? user.vekIV.toString('base64') : null,
+                vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString('base64') : null,
+                vaultSalt: user.vaultSalt,
+            }
+        });
     } catch (error: any) {
         return res.status(401).json({ error: error.message });
     }

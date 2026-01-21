@@ -13,6 +13,7 @@ model User {
 
   passwordHash    String
   salt            String
+  vaultSalt       String?  // Explicit salt for Vault Key derivation
   twoFactorSecret String? // TOTP Secret for Google Authenticator
 
   encryptedVEK    Bytes?

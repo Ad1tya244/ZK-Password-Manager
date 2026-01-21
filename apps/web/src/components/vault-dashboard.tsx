@@ -53,23 +53,8 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             return { ...item, site: "Legacy Item", username: "Unknown", password: plaintext };
                         }
                     } catch (e) {
-                        // Decryption failed with current VEK. Try Legacy KEK.
-                        try {
-                            console.log("Attempting legacy decryption for item:", item.id);
-                            const plaintext = await EncryptionService.decryptLegacy(
-                                item.encryptedBlob,
-                                item.iv,
-                                item.authTag
-                            );
-                            try {
-                                return { ...item, ...JSON.parse(plaintext) };
-                            } catch {
-                                return { ...item, site: "Legacy Item", username: "Unknown", password: plaintext };
-                            }
-                        } catch (legacyError) {
-                            console.error("Item decryption failed completely:", item.id);
-                            return { ...item, site: "Error", username: "Error", password: "[Decryption Failed]" };
-                        }
+                        console.error("Decryption Failed:", item.id);
+                        return { ...item, site: "Decryption Failed", username: "Error", password: "" };
                     }
                 })
             );
@@ -103,9 +88,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.post("/vault", {
-                encryptedBlob: bufferToBase64(ciphertext),
-                iv: bufferToBase64(iv),
-                authTag: bufferToBase64(authTag),
+                encryptedBlob: ciphertext,
+                iv: iv,
+                authTag: authTag,
             });
 
             setSite("");
@@ -147,9 +132,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.put(`/vault/${editingItem.id}`, {
-                encryptedBlob: bufferToBase64(ciphertext),
-                iv: bufferToBase64(iv),
-                authTag: bufferToBase64(authTag),
+                encryptedBlob: ciphertext,
+                iv: iv,
+                authTag: authTag,
             });
 
             setEditingItem(null);

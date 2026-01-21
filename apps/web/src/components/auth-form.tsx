@@ -27,42 +27,20 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
         return null;
     };
 
-    const handleMigration = async (vekResult: any) => {
-        await api.post("/auth/vek", {
-            encryptedVEK: vekResult.encryptedVEK,
-            vekIV: vekResult.iv,
-            vekAuthTag: vekResult.authTag
-        });
 
-        // MIGRATION: Re-encrypt existing vault items
+
+    const saveVaultKey = async (vekResult: any) => {
+        if (!vekResult) return;
         try {
-            const vaultRes = await api.get<VaultItem[]>("/vault");
-            const items = vaultRes.data;
-
-            if (items.length > 0) {
-                console.log("Migrating vault items to VEK...");
-                await Promise.all(items.map(async (item) => {
-                    try {
-                        // 1. Decrypt with Legacy KEK
-                        const plaintext = await EncryptionService.decryptLegacy(item.encryptedBlob, item.iv, item.authTag);
-
-                        // 2. Encrypt with New VEK
-                        const { ciphertext, iv, authTag } = await EncryptionService.encrypt(plaintext);
-
-                        // 3. Update Item
-                        await api.put(`/vault/${item.id}`, {
-                            encryptedBlob: bufferToBase64(ciphertext),
-                            iv: bufferToBase64(iv),
-                            authTag: bufferToBase64(authTag),
-                        });
-                    } catch (err) {
-                        console.error("Failed to migrate item:", item.id, err);
-                    }
-                }));
-                console.log("Migration complete.");
-            }
+            await api.post("/auth/vek", {
+                encryptedVEK: vekResult.encryptedVEK,
+                vekIV: vekResult.iv,
+                vekAuthTag: vekResult.authTag
+            });
+            console.log("Vault key saved to server.");
         } catch (e) {
-            console.error("Migration failed:", e);
+            console.error("Failed to save vault key:", e);
+            setError("Failed to save vault key. Please try again.");
         }
     };
 
@@ -76,23 +54,25 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             if (isLogin) {
                 if (require2fa) {
                     // Verify TOTP for Login
-                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string } }>("/auth/verify-2fa", { username, token: otp });
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string, vaultSalt?: string } }>("/auth/verify-2fa", { username, token: otp });
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
-                    const vekResult = await EncryptionService.initSession(password, res.data.user?.salt || username, {
+                    const vekResult = await EncryptionService.initSession(password, res.data.user?.vaultSalt || username, {
                         encryptedVEK: res.data.user?.encryptedVEK,
                         iv: res.data.user?.vekIV,
                         authTag: res.data.user?.vekAuthTag
                     });
 
+                    // If a new VEK was generated (e.g., migration or first login without VEK), save it clearly
                     if (vekResult) {
-                        await handleMigration(vekResult);
+                        await saveVaultKey(vekResult);
                     }
+
                     onLogin();
                 } else {
                     // Initial Login Request
-                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string } }>("/auth/login", { username, password });
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string, vaultSalt?: string } }>("/auth/login", { username, password });
                     if (res.data.require2fa) {
                         setRequire2fa(true);
                         setStatusMessage(res.data.message || "Enter code from Google Authenticator");
@@ -103,15 +83,18 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
-                    const vekResult = await EncryptionService.initSession(password, res.data.user?.salt || username, {
+                    // Initialize Encryption Session (Prioritize vaultSalt or Username)
+                    const vekResult = await EncryptionService.initSession(password, res.data.user?.vaultSalt || username, {
                         encryptedVEK: res.data.user?.encryptedVEK,
                         iv: res.data.user?.vekIV,
                         authTag: res.data.user?.vekAuthTag
                     });
 
+                    // If a new VEK was generated, save it
                     if (vekResult) {
-                        await handleMigration(vekResult);
+                        await saveVaultKey(vekResult);
                     }
+
                     onLogin();
                 }
             } else {
@@ -135,8 +118,17 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     setLoading(false);
                 } else {
                     // Step 3: Verify Setup
-                    await api.post("/auth/verify-2fa", { username, token: otp, secret }); // Send secret to confirm setup
-                    await EncryptionService.initSession(password, username);
+                    // Note: verify-2fa returns the USER object including vaultSalt
+                    const res = await api.post<AuthResponse & { user?: { vaultSalt: string } }>("/auth/verify-2fa", { username, token: otp, secret });
+
+                    // Use the server-provided vaultSalt for initialization
+                    const vekResult = await EncryptionService.initSession(password, res.data.user?.vaultSalt || username);
+
+                    // SAVE the new VEK immediately!
+                    if (vekResult) {
+                        await saveVaultKey(vekResult);
+                    }
+
                     onLogin();
                 }
             }

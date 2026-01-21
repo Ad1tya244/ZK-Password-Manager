@@ -3,6 +3,8 @@ import { hashPassword, verifyPassword, generateToken, generateRefreshToken } fro
 
 const prisma = new PrismaClient();
 
+import { randomBytes } from "crypto";
+
 export const registerUser = async (username: string, password: string) => {
     const existingUser = await prisma.user.findUnique({ where: { username } });
     if (existingUser) {
@@ -10,12 +12,14 @@ export const registerUser = async (username: string, password: string) => {
     }
 
     const { hash, salt } = await hashPassword(password);
+    const vaultSalt = randomBytes(16).toString("hex");
 
     const user = await prisma.user.create({
         data: {
             username,
             passwordHash: hash,
             salt: salt,
+            vaultSalt: vaultSalt,
         },
     });
 
@@ -76,6 +80,7 @@ export const loginUser = async (username: string, password: string): Promise<{ u
             encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString('base64') : null,
             vekIV: user.vekIV ? user.vekIV.toString('base64') : null,
             vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString('base64') : null,
+            vaultSalt: user.vaultSalt,
         },
         require2fa: !!user.twoFactorSecret
     };
