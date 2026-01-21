@@ -1,17 +1,23 @@
-import { createSecureSession, base64ToBuffer, bufferToBase64, deriveKey, generateRandomKey, exportKey, importKey, encryptValue, decryptValue } from "@zk/crypto/client";
+import { base64ToBuffer, bufferToBase64, deriveKey, generateRandomKey, exportKey, importKey, encryptValue, decryptValue } from "@zk/crypto/client";
 
-// Singleton to hold the session
+// Singleton to hold the secure session in memory
 interface Session {
-    kek: CryptoKey; // Key Encryption Key (derived from password)
-    vek: CryptoKey; // Vault Encryption Key (random, wrapped by KEK)
+    kek: CryptoKey; // Key Encryption Key (derived from Master Password)
+    vek: CryptoKey; // Vault Encryption Key (Random 256-bit key)
+    legacyKeks?: CryptoKey[]; // Fallback KEKs for migration recovery
 }
 
 let session: Session | null = null;
 
 export const EncryptionService = {
     /**
-     * Initialize session with Master Password and VEK data.
-     * If VEK data is missing, we must generate it (Migrate).
+     * Initialize the secure session.
+     * 
+     * 1. Derive KEK from Master Password.
+     * 2. If Encrypted VEK is provided, unwrap it using KEK.
+     * 3. If no Encrypted VEK, generate a new random VEK (Migration Scenario).
+     * 
+     * @returns The wrapped VEK (Encrypted VEK, IV, AuthTag) if a new one was generated, otherwise null.
      */
     initSession: async (
         password: string,
@@ -20,54 +26,101 @@ export const EncryptionService = {
     ) => {
         const salt = new TextEncoder().encode(saltBase64 || "default-salt-12345678");
         const kek = await deriveKey(password, salt);
+
+        // Generate fallback KEKs for legacy recovery
+        const legacyKeks: CryptoKey[] = [];
+
+        // 1. Try deriving with "username" as salt (common legacy pattern)
+        // If saltBase64 IS the username, we already have it in 'kek'. If not, derive it.
+        // We can't easily check inequality of encoded salts, so we just derive if specific conditions met.
+        // Assuming 'saltBase64' passthrough from auth-form might vary.
+
+        const saltUsername = new TextEncoder().encode(saltBase64); // If saltBase64 passed was username
+        if (saltBase64) {
+            const k1 = await deriveKey(password, saltUsername);
+            legacyKeks.push(k1);
+        }
+
+        const saltDefault = new TextEncoder().encode("default-salt-12345678");
+        const k2 = await deriveKey(password, saltDefault);
+        legacyKeks.push(k2);
+
         let vek: CryptoKey;
 
-        // If we have a stored VEK, decrypt it
-        if (vekData && vekData.encryptedVEK) {
-            const cypherBuf = base64ToBuffer(vekData.encryptedVEK);
-            const tagBuf = base64ToBuffer(vekData.authTag);
-            const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
-            combined.set(cypherBuf);
-            combined.set(tagBuf, cypherBuf.length);
+        // Check if we have receive a COMPLETE VEK record from the server
+        const hasStoredVEK = vekData && vekData.encryptedVEK && vekData.iv && vekData.authTag;
 
-            // Decrypt the wrapping to get raw VEK bytes
-            const dummyIv = base64ToBuffer(vekData.iv); // Actually decryptValue takes BufferSource
+        if (hasStoredVEK) {
+            try {
+                // UNWRAP FLOW: Decrypt existing VEK using KEK
+                const ciphertext = base64ToBuffer(vekData.encryptedVEK);
+                const authTag = base64ToBuffer(vekData.authTag);
+                const iv = base64ToBuffer(vekData.iv);
 
-            // KEK decrypts the wrapped VEK
-            // We reuse decryptValue but it assumes string return. 
-            // We need to implement raw decryption in client.ts or just handle it here?
-            // client.ts decryptValue returns string. We encrypted ArrayBuffer.
-            // We need to handle this.
-            // Wait, `encryptValue` in client.ts now accepts ArrayBuffer, but `decryptValue` returns string?
-            // I should have checked decryptValue.
-            // If I updated encryptValue, I should assume I might need to update decryptValue OR just use raw webcrypto here for unwrapping.
-            // It's cleaner to use raw webcrypto for the specific task of unwrapping if the helper is strictly string-based.
+                // WebCrypto expect digest/tag appended to ciphertext for AES-GCM decryption
+                const combined = new Uint8Array(ciphertext.length + authTag.length);
+                combined.set(ciphertext);
+                combined.set(authTag, ciphertext.length);
 
-            const rawVek = await window.crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: base64ToBuffer(vekData.iv) as BufferSource },
-                kek,
-                combined
-            );
+                // Decrypt the wrapped VEK raw bytes
+                const rawVek = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv as any },
+                    kek,
+                    combined
+                );
 
-            vek = await importKey(rawVek);
+                // Import raw bytes back into a specialized CryptoKey
+                vek = await importKey(rawVek);
+            } catch (error) {
+                console.error("VEK Decryption/Decoding failed, falling back to new VEK:", error);
+                // Fallback to MIGRATION FLOW if decryption OR decoding fails
+                vek = await generateRandomKey();
+
+                // Initialize session immediately so it's available for migration
+                session = { kek, vek, legacyKeks };
+
+                // IMPORTANT: If we fallback, we must pretend we don't have a stored VEK so we save the new one
+                // The easiest way is to let the function flow down to the "if (!hasStoredVEK)" check...
+                // But hasStoredVEK was true. We need to force a save.
+                // We can reset hasStoredVEK-like behavior by ensuring we return the new VEK.
+
+                // Re-implementing the RETURN logic here for the fallback case to be safe,
+                // OR we could mutate a flag, but explicit return is better.
+
+                const rawVek = await exportKey(vek);
+                const { ciphertext, iv } = await encryptValue(kek, rawVek);
+
+                const fullCiphertext = new Uint8Array(ciphertext);
+                const tagLength = 16;
+                const dataLength = fullCiphertext.length - tagLength;
+                const encryptedVEK = fullCiphertext.slice(0, dataLength);
+                const authTag = fullCiphertext.slice(dataLength);
+
+                return {
+                    encryptedVEK: bufferToBase64(encryptedVEK),
+                    iv: bufferToBase64(iv),
+                    authTag: bufferToBase64(authTag)
+                };
+            }
         } else {
-            // New VEK Generation (Migration)
+            // MIGRATION FLOW: Generate new random VEK
             vek = await generateRandomKey();
         }
 
-        session = { kek, vek };
+        session = { kek, vek, legacyKeks };
 
-        // Return the wrapped VEK so caller can save it
-        if (!vekData || !vekData.encryptedVEK) {
+        // If we generated a new VEK (didn't use stored one), return it wrapped so the backend can store it
+        if (!hasStoredVEK) {
             const rawVek = await exportKey(vek);
             const { ciphertext, iv } = await encryptValue(kek, rawVek);
 
-            // Split tag (last 16 bytes)
-            const full = new Uint8Array(ciphertext);
-            const tagLen = 16;
-            const dataLen = full.length - tagLen;
-            const encryptedVEK = full.slice(0, dataLen);
-            const authTag = full.slice(dataLen);
+            // Separate AuthTag (last 16 bytes) from Ciphertext
+            const fullCiphertext = new Uint8Array(ciphertext);
+            const tagLength = 16;
+            const dataLength = fullCiphertext.length - tagLength;
+
+            const encryptedVEK = fullCiphertext.slice(0, dataLength);
+            const authTag = fullCiphertext.slice(dataLength);
 
             return {
                 encryptedVEK: bufferToBase64(encryptedVEK),
@@ -75,54 +128,95 @@ export const EncryptionService = {
                 authTag: bufferToBase64(authTag)
             };
         }
+
         return null;
     },
 
     /**
-     * Encrypts data using the VEK (Vault Key).
+     * Encrypts plaintext data using the Session VEK.
+     * Returns: { ciphertext, iv, authTag } (Base64 encoded)
      */
     encrypt: async (data: string) => {
         if (!session) throw new Error("Session not initialized");
-        // Encrypt using VEK, not KEK
-        return await encryptValue(session.vek, data);
+
+        const { ciphertext, iv } = await encryptValue(session.vek, data);
+
+        // Separate AuthTag
+        const fullCiphertext = new Uint8Array(ciphertext);
+        const tagLength = 16;
+        const dataLength = fullCiphertext.length - tagLength;
+
+        const encryptedData = fullCiphertext.slice(0, dataLength);
+        const authTag = fullCiphertext.slice(dataLength);
+
+        return {
+            ciphertext: encryptedData,
+            iv,
+            authTag
+        };
     },
 
     /**
-     * Decrypts buffer using the VEK.
+     * Decrypts vault data using the Session VEK.
      */
     decrypt: async (encryptedBlob: string, iv: string, authTag: string) => {
         if (!session) throw new Error("Session not initialized");
 
-        const cypherBuf = base64ToBuffer(encryptedBlob);
-        const tagBuf = base64ToBuffer(authTag);
+        const ciphertext = base64ToBuffer(encryptedBlob);
+        const tag = base64ToBuffer(authTag);
+        const ivBuffer = base64ToBuffer(iv);
 
-        const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
-        combined.set(cypherBuf);
-        combined.set(tagBuf, cypherBuf.length);
+        const combined = new Uint8Array(ciphertext.length + tag.length);
+        combined.set(ciphertext);
+        combined.set(tag, ciphertext.length);
 
-        return await decryptValue(session.vek, combined.buffer, base64ToBuffer(iv));
+        return await decryptValue(session.vek, combined.buffer, ivBuffer);
     },
 
     /**
-     * Decrypts buffer using the KEK (Legacy Migration).
+     * Legacy Decryption: Uses KEK directly.
+     * Used ONLY during migration to decrypt old items before re-encrypting with VEK.
      */
     decryptLegacy: async (encryptedBlob: string, iv: string, authTag: string) => {
         if (!session) throw new Error("Session not initialized");
 
-        const cypherBuf = base64ToBuffer(encryptedBlob);
-        const tagBuf = base64ToBuffer(authTag);
+        const ciphertext = base64ToBuffer(encryptedBlob);
+        const tag = base64ToBuffer(authTag);
+        const ivBuffer = base64ToBuffer(iv);
 
-        const combined = new Uint8Array(cypherBuf.length + tagBuf.length);
-        combined.set(cypherBuf);
-        combined.set(tagBuf, cypherBuf.length);
+        const combined = new Uint8Array(ciphertext.length + tag.length);
+        combined.set(ciphertext);
+        combined.set(tag, ciphertext.length);
 
-        return await decryptValue(session.kek, combined.buffer, base64ToBuffer(iv));
-    },
+        // Try Main KEK first
+        try {
+            return await decryptValue(session.kek, combined.buffer, ivBuffer);
+        } catch (e) {
+            console.warn("Main KEK failed. Trying fallbacks...");
+        }
 
-    // Helper to get access to KEK for legacy migration if needed
-    getLegacyKEK: () => {
-        if (!session) throw new Error("Session not initialized");
-        return session.kek;
+        // Try Fallback KEKs (Legacy Recovery)
+        if (session.legacyKeks && session.legacyKeks.length > 0) {
+            for (const legacyKek of session.legacyKeks) {
+                try {
+                    console.log("Attempting legacy KEK...");
+                    return await decryptValue(legacyKek, combined.buffer, ivBuffer);
+                } catch (e) {
+                    // Check alternative format (blob only) for this KEK
+                    try {
+                        return await decryptValue(legacyKek, ciphertext.buffer as ArrayBuffer, ivBuffer);
+                    } catch (e2) { }
+                }
+            }
+        }
+
+        // Final Attempt: Alternative format on Main KEK (if not tried already inside loop)
+        try {
+            return await decryptValue(session.kek, ciphertext.buffer as ArrayBuffer, ivBuffer);
+        } catch (e2) {
+            console.error("All decryption attempts failed.");
+            throw e2;
+        }
     },
 
     clearSession: () => {

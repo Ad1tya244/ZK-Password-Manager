@@ -53,7 +53,23 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             return { ...item, site: "Legacy Item", username: "Unknown", password: plaintext };
                         }
                     } catch (e) {
-                        return { ...item, site: "Error", username: "Error", password: "[Decryption Failed]" };
+                        // Decryption failed with current VEK. Try Legacy KEK.
+                        try {
+                            console.log("Attempting legacy decryption for item:", item.id);
+                            const plaintext = await EncryptionService.decryptLegacy(
+                                item.encryptedBlob,
+                                item.iv,
+                                item.authTag
+                            );
+                            try {
+                                return { ...item, ...JSON.parse(plaintext) };
+                            } catch {
+                                return { ...item, site: "Legacy Item", username: "Unknown", password: plaintext };
+                            }
+                        } catch (legacyError) {
+                            console.error("Item decryption failed completely:", item.id);
+                            return { ...item, site: "Error", username: "Error", password: "[Decryption Failed]" };
+                        }
                     }
                 })
             );
@@ -84,19 +100,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
         try {
             const dataToEncrypt = JSON.stringify({ site, username, password });
-            const { ciphertext, iv } = await EncryptionService.encrypt(dataToEncrypt);
-
-            const fullBuffer = new Uint8Array(ciphertext);
-            const tagLength = 16;
-            const dataLength = fullBuffer.length - tagLength;
-
-            const encryptedData = fullBuffer.slice(0, dataLength);
-            const tag = fullBuffer.slice(dataLength);
+            const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.post("/vault", {
-                encryptedBlob: bufferToBase64(encryptedData),
+                encryptedBlob: bufferToBase64(ciphertext),
                 iv: bufferToBase64(iv),
-                authTag: bufferToBase64(tag),
+                authTag: bufferToBase64(authTag),
             });
 
             setSite("");
@@ -135,19 +144,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
         try {
             const dataToEncrypt = JSON.stringify({ site: editSite, username: editUsername, password: editPassword });
-            const { ciphertext, iv } = await EncryptionService.encrypt(dataToEncrypt);
-
-            const fullBuffer = new Uint8Array(ciphertext);
-            const tagLength = 16;
-            const dataLength = fullBuffer.length - tagLength;
-
-            const encryptedData = fullBuffer.slice(0, dataLength);
-            const tag = fullBuffer.slice(dataLength);
+            const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.put(`/vault/${editingItem.id}`, {
-                encryptedBlob: bufferToBase64(encryptedData),
+                encryptedBlob: bufferToBase64(ciphertext),
                 iv: bufferToBase64(iv),
-                authTag: bufferToBase64(tag),
+                authTag: bufferToBase64(authTag),
             });
 
             setEditingItem(null);

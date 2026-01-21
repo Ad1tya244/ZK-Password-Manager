@@ -47,19 +47,13 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                         const plaintext = await EncryptionService.decryptLegacy(item.encryptedBlob, item.iv, item.authTag);
 
                         // 2. Encrypt with New VEK
-                        const { ciphertext, iv } = await EncryptionService.encrypt(plaintext);
-
-                        const fullBuffer = new Uint8Array(ciphertext);
-                        const tagLength = 16;
-                        const dataLength = fullBuffer.length - tagLength;
-                        const encryptedData = fullBuffer.slice(0, dataLength);
-                        const tag = fullBuffer.slice(dataLength);
+                        const { ciphertext, iv, authTag } = await EncryptionService.encrypt(plaintext);
 
                         // 3. Update Item
                         await api.put(`/vault/${item.id}`, {
-                            encryptedBlob: bufferToBase64(encryptedData),
+                            encryptedBlob: bufferToBase64(ciphertext),
                             iv: bufferToBase64(iv),
-                            authTag: bufferToBase64(tag),
+                            authTag: bufferToBase64(authTag),
                         });
                     } catch (err) {
                         console.error("Failed to migrate item:", item.id, err);
@@ -82,11 +76,11 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             if (isLogin) {
                 if (require2fa) {
                     // Verify TOTP for Login
-                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string } }>("/auth/verify-2fa", { username, token: otp });
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string } }>("/auth/verify-2fa", { username, token: otp });
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
-                    const vekResult = await EncryptionService.initSession(password, username, {
+                    const vekResult = await EncryptionService.initSession(password, res.data.user?.salt || username, {
                         encryptedVEK: res.data.user?.encryptedVEK,
                         iv: res.data.user?.vekIV,
                         authTag: res.data.user?.vekAuthTag
@@ -98,7 +92,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     onLogin();
                 } else {
                     // Initial Login Request
-                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string } }>("/auth/login", { username, password });
+                    const res = await api.post<AuthResponse & { require2fa?: boolean, message?: string, user?: { encryptedVEK: string, vekIV: string, vekAuthTag: string, salt: string } }>("/auth/login", { username, password });
                     if (res.data.require2fa) {
                         setRequire2fa(true);
                         setStatusMessage(res.data.message || "Enter code from Google Authenticator");
@@ -109,7 +103,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
-                    const vekResult = await EncryptionService.initSession(password, username, {
+                    const vekResult = await EncryptionService.initSession(password, res.data.user?.salt || username, {
                         encryptedVEK: res.data.user?.encryptedVEK,
                         iv: res.data.user?.vekIV,
                         authTag: res.data.user?.vekAuthTag
