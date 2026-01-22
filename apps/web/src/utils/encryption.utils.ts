@@ -8,6 +8,75 @@ interface Session {
 
 let session: Session | null = null;
 
+// ------------------------------------
+// Recovery Helpers
+// ------------------------------------
+
+export const generateRecoveryKey = (): string => {
+    // Generate 32 bytes (256 bits) random key
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    // Return as hex string for user readability (could be mnemonics, but hex is simple)
+    // Actually, hex is hard to read. Base64url is better? Or just Base64?
+    // Let's use Hex for standard "Key" look, or split into groups.
+    return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+export const deriveRecoveryKEK = async (recoveryKeyHex: string) => {
+    // Simply import the key material
+    // We treating the recovery key as high-entropy, so we can use it directly or HKDF it.
+    // HKDF is safer.
+    const keyBytes = new Uint8Array(recoveryKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+    const keyMaterial = await window.crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "HKDF" },
+        false,
+        ["deriveKey", "deriveBits"]
+    );
+
+    // Derive KEK using a static info (or we could use a salt, but simple recovery is static context)
+    // Actually, we want a hash for the server to verify.
+    // Let's derive TWO things:
+    // 1. Recovery Key Hash (for server auth)
+    // 2. Recovery KEK (for wrapping VEK)
+
+    // We need a salt. But recovery key is static.
+    // We can use a static salt like "ZK_RECOVERY_SALT".
+    const enc = new TextEncoder();
+    const salt = enc.encode("ZK_PASSWORD_MANAGER_RECOVERY_SALT");
+
+    const kek = await window.crypto.subtle.deriveKey(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: salt,
+            info: enc.encode("RECOVERY_KEK"),
+        },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt", "wrapKey", "unwrapKey"]
+    );
+
+    // Derive Hash for Server (using SHA-256 on the key itself? No, use the HKDF output or similar)
+    // Actually, let's just hash the key bytes directly for the server identifier.
+    // Or usage HKDF to derive an "Identity Key".
+    const identityKey = await window.crypto.subtle.deriveBits(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: salt,
+            info: enc.encode("RECOVERY_IDENTITY"),
+        },
+        keyMaterial,
+        256
+    );
+    const recoveryKeyHash = bufferToBase64(identityKey);
+
+    return { kek, recoveryKeyHash };
+};
+
 export const EncryptionService = {
     /**
      * Initialize the secure session.
@@ -68,6 +137,52 @@ export const EncryptionService = {
     decrypt: async (encryptedBlob: string, iv: string, authTag: string) => {
         if (!session) throw new Error("Session not initialized");
         return decryptData(session.vek, encryptedBlob, iv, authTag);
+    },
+
+    wrapVEKWithKey: async (wrappingKey: CryptoKey) => {
+        if (!session) throw new Error("Session not initialized");
+
+        const vekBytes = await window.crypto.subtle.exportKey("raw", session.vek);
+
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedVEK = await window.crypto.subtle.encrypt(
+            { name: "AES-GCM", iv: iv },
+            wrappingKey,
+            vekBytes
+        );
+
+        return splitEncryptedData({ ciphertext: encryptedVEK, iv });
+    },
+
+
+
+    /**
+     * Restore session from a raw VEK and new password (used in recovery).
+     * This sets the session with the new password-derived KEK and the recovered VEK.
+     * It returns the new wrapped VEK (encrypted with new password KEK) for storage.
+     */
+    restoreSession: async (password: string, rawVek: ArrayBuffer) => {
+        // 1. Generate NEW Vault Salt
+        const saltArray = window.crypto.getRandomValues(new Uint8Array(16));
+        const newVaultSalt = Array.from(saltArray).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // 2. Derive NEW KEK from new password and new salt
+        const newKek = await deriveKey(password, saltArray);
+
+        // 3. Import the Recovered VEK (if not already a Key)
+        // If rawVek is ArrayBuffer, import it.
+        const vek = await importKey(rawVek);
+
+        // 4. Wrap VEK with NEW KEK
+        const wrapper = await wrapVEK(newKek, vek);
+
+        // 5. Update Session
+        session = { kek: newKek, vek };
+
+        return {
+            ...wrapper,
+            newVaultSalt // Return this so the caller can send it to the server
+        };
     },
 
     clearSession: () => { session = null; },

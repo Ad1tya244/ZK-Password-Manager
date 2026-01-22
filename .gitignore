@@ -5,6 +5,7 @@ node_modules
 
 # Testing
 coverage
+test-recovery.ts
 
 # Next.js
 .next/

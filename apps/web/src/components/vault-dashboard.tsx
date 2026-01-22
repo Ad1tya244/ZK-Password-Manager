@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { api, VaultItem } from "../lib/api";
-import { EncryptionService } from "../utils/encryption.utils";
+import { EncryptionService, generateRecoveryKey, deriveRecoveryKEK } from "../utils/encryption.utils";
 import { bufferToBase64 } from "@zk/crypto/client";
 import { analyzePasswordStrength, StrengthResult } from "../utils/password-strength";
+import RecoverySetup from "./auth/recovery-setup";
 
 export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [items, setItems] = useState<any[]>([]);
@@ -20,6 +21,11 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     const [showPasswordAdd, setShowPasswordAdd] = useState(false);
     const [showPasswordDelete, setShowPasswordDelete] = useState(false);
+
+    // Recovery State
+    const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
+    const [recoveryKey, setRecoveryKey] = useState("");
+    const [isRecoverySaved, setIsRecoverySaved] = useState(false);
 
     // Edit State
     const [editingItem, setEditingItem] = useState<any>(null);
@@ -173,6 +179,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         setTimeout(() => setCopiedId(null), 2000);
     };
 
+    const handleSetupRecovery = () => {
+        setIsRecoveryModalOpen(true);
+    };
+
     return (
         <div className="w-full max-w-6xl p-6 lg:p-12">
             {/* Header */}
@@ -190,6 +200,15 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                         Delete Account
+                    </button>
+                    <button
+                        onClick={handleSetupRecovery}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-sm font-medium border border-emerald-500/20"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Setup Recovery
                     </button>
                     <button
                         onClick={onLogout}
@@ -494,6 +513,11 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Recovery Setup Modal */}
+            {isRecoveryModalOpen && (
+                <RecoverySetup onClose={() => setIsRecoveryModalOpen(false)} />
             )}
 
             {/* Edit Modal */}

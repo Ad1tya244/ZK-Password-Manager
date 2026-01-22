@@ -145,3 +145,73 @@ export const saveVEK = async (userId: string, encryptedVEK: Buffer, iv: Buffer, 
         }
     });
 };
+
+export const setupRecovery = async (
+    userId: string,
+    recoveryKeyHash: string,
+    recoveryEncryptedVEK: Buffer,
+    recoveryVekIV: Buffer,
+    recoveryVekAuthTag: Buffer
+) => {
+    return await prisma.user.update({
+        where: { id: userId },
+        data: {
+            recoveryKeyHash,
+            recoveryEncryptedVEK,
+            recoveryVekIV,
+            recoveryVekAuthTag
+        }
+    });
+};
+
+export const initRecovery = async (recoveryKeyHash: string) => {
+    const user = await prisma.user.findUnique({
+        where: { recoveryKeyHash }
+    });
+
+    if (!user) {
+        // Return null or throw generic error to prevent enumeration?
+        // For this task, throwing specific error is helpful.
+        throw new Error("Invalid Recovery Key");
+    }
+
+    return {
+        username: user.username,
+        recoveryEncryptedVEK: user.recoveryEncryptedVEK?.toString("base64"),
+        recoveryVekIV: user.recoveryVekIV?.toString("base64"),
+        recoveryVekAuthTag: user.recoveryVekAuthTag?.toString("base64")
+    };
+};
+
+export const recoverAccount = async (
+    recoveryKeyHash: string,
+    newPassword: string,
+    newEncryptedVEK: Buffer,
+    newVekIV: Buffer,
+    newVekAuthTag: Buffer,
+    newVaultSalt: string
+) => {
+    const user = await prisma.user.findUnique({
+        where: { recoveryKeyHash }
+    });
+
+    if (!user) throw new Error("Invalid Recovery Key");
+
+    const { hash, salt } = await hashPassword(newPassword);
+
+    // Update password and re-wrapped VEK
+    // Also reset lockout counters AND update vaultSalt
+    return await prisma.user.update({
+        where: { id: user.id },
+        data: {
+            passwordHash: hash,
+            salt: salt,
+            vaultSalt: newVaultSalt, // Update the explicit salt
+            encryptedVEK: newEncryptedVEK,
+            vekIV: newVekIV,
+            vekAuthTag: newVekAuthTag,
+            failedLoginAttempts: 0,
+            lockoutUntil: null
+        }
+    });
+};

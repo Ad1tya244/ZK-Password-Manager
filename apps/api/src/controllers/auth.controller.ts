@@ -186,3 +186,70 @@ export const saveVEK = async (req: Request, res: Response) => {
         return res.status(500).json({ error: error.message });
     }
 };
+
+export const setupRecovery = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user.userId;
+        const { recoveryKeyHash, recoveryEncryptedVEK, recoveryVekIV, recoveryVekAuthTag } = req.body;
+
+        if (!recoveryKeyHash || !recoveryEncryptedVEK || !recoveryVekIV || !recoveryVekAuthTag) {
+            return res.status(400).json({ error: "Missing recovery fields" });
+        }
+
+        await authService.setupRecovery(
+            userId,
+            recoveryKeyHash,
+            toBuffer(recoveryEncryptedVEK),
+            toBuffer(recoveryVekIV),
+            toBuffer(recoveryVekAuthTag)
+        );
+
+        return res.json({ message: "Recovery setup successful" });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+export const initRecovery = async (req: Request, res: Response) => {
+    try {
+        const { recoveryKeyHash } = req.body;
+        if (!recoveryKeyHash) return res.status(400).json({ error: "Missing recovery key hash" });
+
+        const data = await authService.initRecovery(recoveryKeyHash);
+        return res.json(data);
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+    }
+};
+
+export const recoverAccount = async (req: Request, res: Response) => {
+    try {
+        const {
+            recoveryKeyHash,
+            newPassword,
+            newEncryptedVEK,
+            newVekIV,
+            newVekAuthTag,
+            newVaultSalt
+        } = req.body;
+
+        if (!recoveryKeyHash || !newPassword || !newEncryptedVEK || !newVekIV || !newVekAuthTag || !newVaultSalt) {
+            return res.status(400).json({ error: "Missing fields" });
+        }
+
+        // Pass raw password to service to be hashed
+        await authService.recoverAccount(
+            recoveryKeyHash,
+            newPassword,
+            toBuffer(newEncryptedVEK),
+            toBuffer(newVekIV),
+            toBuffer(newVekAuthTag),
+            newVaultSalt
+        );
+
+        return res.json({ message: "Account recovered successfully. Please log in with your new password." });
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+    }
+};

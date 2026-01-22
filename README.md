@@ -18,6 +18,7 @@ This project follows a monorepo architecture managed by [TurboRepo](https://turb
 -   **Vault Encryption Key (VEK):** A randomly generated key (VEK) is used to encrypt all vault items. This VEK is itself encrypted (wrapped) by the KEK and stored on the server. This allows for changing the master password without re-encrypting the entire vault.
 -   **Client-Side Encryption:** All encryption and decryption happen in the browser (or client app) using robust cryptographic primitives (AES-GCM, Argon2).
 -   **Authentication:** Secure authentication using JWT (JSON Web Tokens) and Argon2 password hashing. Two-Factor Authentication (2FA) is supported via TOTP (Time-based One-Time Password) using Google Authenticator or similar apps.
+-   **Security Hygiene:** The `vaultSalt` is rotated upon account recovery to strictly separate the new master password's cryptographic lineage from the old one.
 
 ## Tech Stack
 
@@ -125,6 +126,7 @@ To stop the application, press `Ctrl + C` in the terminal where the server is ru
 -   User Registration & Login (Secure Auth)
 -   Two-Factor Authentication (TOTP via Google Authenticator)
 -   **Vault Migration:** Automatic upgrade of legacy encryption to the new VEK architecture upon login.
+-   **Account Recovery:** Secure Zero-Knowledge account recovery using a generated Recovery Key.
 -   Create, View, Edit, and Delete Vault Items.
 -   Secure Password Generation
 -   Password Strength Analysis

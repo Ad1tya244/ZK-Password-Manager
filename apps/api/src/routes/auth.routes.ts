@@ -13,5 +13,8 @@ router.post("/logout", authController.logout);
 router.get("/me", authenticateToken, authController.me);
 router.delete("/delete", authenticateToken, authController.deleteAccount);
 router.post("/vek", authenticateToken, authController.saveVEK);
+router.post("/recovery/setup", authenticateToken, authController.setupRecovery);
+router.post("/recovery/init", loginLimiter, authController.initRecovery);
+router.post("/recovery/reset", loginLimiter, authController.recoverAccount);
 
 export default router;

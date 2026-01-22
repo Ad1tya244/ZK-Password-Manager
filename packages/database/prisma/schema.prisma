@@ -23,6 +23,11 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockoutUntil        DateTime?
 
+  recoveryKeyHash      String?  @unique
+  recoveryEncryptedVEK Bytes?
+  recoveryVekIV        Bytes?
+  recoveryVekAuthTag   Bytes?
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
