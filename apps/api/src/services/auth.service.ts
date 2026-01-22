@@ -26,6 +26,10 @@ export const registerUser = async (username: string, password: string) => {
     return { id: user.id, username: user.username };
 };
 
+export const getUserById = async (id: string) => {
+    return await prisma.user.findUnique({ where: { id } });
+};
+
 
 
 import { authenticator } from "@otplib/preset-default";
@@ -110,11 +114,13 @@ export const loginUser = async (username: string, password: string): Promise<{ u
 
     return {
         user: {
-            ...user,
+            id: user.id,
+            username: user.username,
             encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString('base64') : null,
             vekIV: user.vekIV ? user.vekIV.toString('base64') : null,
             vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString('base64') : null,
             vaultSalt: user.vaultSalt,
+            hasRecovery: !!user.recoveryKeyHash
         },
         require2fa: !!user.twoFactorSecret
     };

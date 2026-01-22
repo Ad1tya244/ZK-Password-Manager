@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../../lib/api";
 import { EncryptionService, generateRecoveryKey, deriveRecoveryKEK } from "../../utils/encryption.utils";
 
-export default function RecoverySetup({ onClose }: { onClose: () => void }) {
+export default function RecoverySetup({ onClose, isRotation = false }: { onClose: () => void, isRotation?: boolean }) {
     const [recoveryKey, setRecoveryKey] = useState("");
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState<"initial" | "show-key" | "confirm">("initial");
@@ -48,20 +48,26 @@ export default function RecoverySetup({ onClose }: { onClose: () => void }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+            <div className={`bg-slate-900 border ${isRotation ? "border-amber-500/30" : "border-slate-700"} rounded-2xl p-6 w-full max-w-lg shadow-2xl relative overflow-hidden`}>
+                <div className={`absolute top-0 left-0 w-full h-1 ${isRotation ? "bg-gradient-to-r from-amber-500 to-orange-500" : "bg-gradient-to-r from-emerald-500 to-teal-500"}`}></div>
 
-                <h3 className="text-xl font-bold text-white mb-2">Recovery Key Setup</h3>
+                <h3 className="text-xl font-bold text-white mb-2">{isRotation ? "Rotate Recovery Key" : "Recovery Key Setup"}</h3>
 
                 {step === "initial" && (
                     <div className="space-y-4">
                         <p className="text-slate-300 text-sm">
-                            Generate a specialized key that can restore your account if you forget your master password.
+                            {isRotation
+                                ? "Generating a new recovery key will invalidate your old one immediately."
+                                : "Generate a specialized key that can restore your account if you forget your master password."}
                         </p>
-                        <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-lg">
-                            <p className="text-yellow-200 text-xs font-semibold uppercase tracking-wide mb-1">Warning</p>
-                            <p className="text-yellow-100/80 text-sm">
-                                You must save this key securely. It will be shown ONLY ONCE. If you lose your password and this key, your data is lost forever.
+                        <div className={`p-4 rounded-lg ${isRotation ? "bg-red-500/10 border border-red-500/20" : "bg-yellow-500/10 border border-yellow-500/20"}`}>
+                            <p className={`${isRotation ? "text-red-400" : "text-yellow-200"} text-xs font-semibold uppercase tracking-wide mb-1`}>
+                                {isRotation ? "Critical Warning" : "Warning"}
+                            </p>
+                            <p className={`${isRotation ? "text-red-300" : "text-yellow-100/80"} text-sm leading-relaxed`}>
+                                {isRotation
+                                    ? "Any backup of your OLD recovery key will stop working. You MUST save the NEW key, or you risk permanent data loss."
+                                    : "You must save this key securely. It will be shown ONLY ONCE. If you lose your password and this key, your data is lost forever."}
                             </p>
                         </div>
                         {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -70,9 +76,9 @@ export default function RecoverySetup({ onClose }: { onClose: () => void }) {
                             <button
                                 onClick={generateAndSave}
                                 disabled={loading}
-                                className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+                                className={`px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 text-white ${isRotation ? "bg-amber-600 hover:bg-amber-500" : "bg-emerald-600 hover:bg-emerald-500"}`}
                             >
-                                {loading ? "Generating..." : "Generate Recovery Key"}
+                                {loading ? "Generating..." : (isRotation ? "Rotate Key & Save" : "Generate Recovery Key")}
                             </button>
                         </div>
                     </div>

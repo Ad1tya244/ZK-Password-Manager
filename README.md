@@ -126,7 +126,7 @@ To stop the application, press `Ctrl + C` in the terminal where the server is ru
 -   User Registration & Login (Secure Auth)
 -   Two-Factor Authentication (TOTP via Google Authenticator)
 -   **Vault Migration:** Automatic upgrade of legacy encryption to the new VEK architecture upon login.
--   **Account Recovery:** Secure Zero-Knowledge account recovery using a generated Recovery Key.
+-   **Account Recovery:** Secure Zero-Knowledge account recovery with support for **Recovery Key Rotation** if a key is compromised.
 -   Create, View, Edit, and Delete Vault Items.
 -   Secure Password Generation
 -   Password Strength Analysis

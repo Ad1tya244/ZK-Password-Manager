@@ -111,11 +111,13 @@ export const verify2fa = async (req: Request, res: Response) => {
 
         return res.json({
             user: {
-                ...user,
+                id: user.id,
+                username: user.username,
                 encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString('base64') : null,
                 vekIV: user.vekIV ? user.vekIV.toString('base64') : null,
                 vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString('base64') : null,
                 vaultSalt: user.vaultSalt,
+                hasRecovery: !!user.recoveryKeyHash
             }
         });
     } catch (error: any) {
@@ -129,10 +131,23 @@ export const logout = (req: Request, res: Response) => {
     return res.json({ message: "Logged out" });
 };
 
-export const me = (req: Request, res: Response) => {
-    // @ts-ignore - user is attached by middleware
-    const user = req.user;
-    return res.json({ user });
+export const me = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user.userId;
+        const user = await authService.getUserById(userId); // Need to expose this in service
+        if (!user) return res.status(404).json({ error: "User not found" });
+
+        return res.json({
+            user: {
+                id: user.id,
+                username: user.username,
+                hasRecovery: !!user.recoveryKeyHash
+            }
+        });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to fetch profile" });
+    }
 };
 
 export const deleteAccount = async (req: Request, res: Response) => {

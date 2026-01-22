@@ -9,6 +9,7 @@ import RecoverySetup from "./auth/recovery-setup";
 
 export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [items, setItems] = useState<any[]>([]);
+    const [hasRecovery, setHasRecovery] = useState(false);
     const [site, setSite] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -24,8 +25,6 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     // Recovery State
     const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
-    const [recoveryKey, setRecoveryKey] = useState("");
-    const [isRecoverySaved, setIsRecoverySaved] = useState(false);
 
     // Edit State
     const [editingItem, setEditingItem] = useState<any>(null);
@@ -72,8 +71,18 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         }
     };
 
+    const loadProfile = async () => {
+        try {
+            const res = await api.get<{ user: { hasRecovery: boolean } }>("/auth/me");
+            setHasRecovery(res.data.user?.hasRecovery || false);
+        } catch (e) {
+            console.error("Failed to load profile", e);
+        }
+    };
+
     useEffect(() => {
         loadItems();
+        loadProfile();
     }, []);
 
     // Analyze password on change

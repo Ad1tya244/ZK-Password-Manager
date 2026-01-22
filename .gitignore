@@ -6,6 +6,9 @@ node_modules
 # Testing
 coverage
 test-recovery.ts
+debug-user.ts
+reset-db.ts
+reproduction_save_vault.ts
 
 # Next.js
 .next/

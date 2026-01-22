@@ -63,11 +63,12 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
-                    const vekResult = await EncryptionService.initSession(password, res.data.user?.vaultSalt || username, {
-                        encryptedVEK: res.data.user?.encryptedVEK,
-                        iv: res.data.user?.vekIV,
-                        authTag: res.data.user?.vekAuthTag
-                    });
+                    const user = res.data.user;
+                    const vekData = (user?.encryptedVEK && user?.vekIV && user?.vekAuthTag)
+                        ? { encryptedVEK: user.encryptedVEK, iv: user.vekIV, authTag: user.vekAuthTag }
+                        : undefined;
+
+                    const vekResult = await EncryptionService.initSession(password, user?.vaultSalt || username, vekData);
 
                     // If a new VEK was generated (e.g., migration or first login without VEK), save it clearly
                     if (vekResult) {
@@ -88,12 +89,13 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     const token = res.data.token;
                     localStorage.setItem("token", token);
 
+                    const user = res.data.user;
+                    const vekData = (user?.encryptedVEK && user?.vekIV && user?.vekAuthTag)
+                        ? { encryptedVEK: user.encryptedVEK, iv: user.vekIV, authTag: user.vekAuthTag }
+                        : undefined;
+
                     // Initialize Encryption Session (Prioritize vaultSalt or Username)
-                    const vekResult = await EncryptionService.initSession(password, res.data.user?.vaultSalt || username, {
-                        encryptedVEK: res.data.user?.encryptedVEK,
-                        iv: res.data.user?.vekIV,
-                        authTag: res.data.user?.vekAuthTag
-                    });
+                    const vekResult = await EncryptionService.initSession(password, user?.vaultSalt || username, vekData);
 
                     // If a new VEK was generated, save it
                     if (vekResult) {
