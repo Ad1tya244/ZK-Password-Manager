@@ -69,9 +69,43 @@ export const loginUser = async (username: string, password: string): Promise<{ u
         throw new Error("vault not found, if new user, please create a new vault");
     }
 
+    // Check for Lockout
+    if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+        const remaining = Math.ceil((user.lockoutUntil.getTime() - Date.now()) / 60000);
+        throw new Error(`Account locked. Try again in ${remaining} minutes.`);
+    }
+
     const isValid = await verifyPassword(password, user.passwordHash);
     if (!isValid) {
+        // Increment failed attempts
+        const attempts = user.failedLoginAttempts + 1;
+        let lockoutUntil = user.lockoutUntil;
+
+        if (attempts >= 5) {
+            lockoutUntil = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                failedLoginAttempts: attempts,
+                lockoutUntil: lockoutUntil
+            }
+        });
+
+        if (attempts >= 5) {
+            throw new Error(`Account locked. Try again in 10 minutes.`);
+        }
+
         throw new Error("Invalid password");
+    }
+
+    // Reset on success
+    if (user.failedLoginAttempts > 0 || user.lockoutUntil) {
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts: 0, lockoutUntil: null }
+        });
     }
 
     return {
