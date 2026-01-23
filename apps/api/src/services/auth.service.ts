@@ -126,7 +126,15 @@ export const loginUser = async (username: string, password: string): Promise<{ u
     };
 };
 
-export const deleteUser = async (userId: string, password?: string) => {
+export const verifyUserPassword = async (userId: string, password: string) => {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+
+    const isValid = await verifyPassword(password, user.passwordHash);
+    return isValid;
+};
+
+export const deleteUser = async (userId: string, password?: string, totpToken?: string) => {
     // If password provided, verify it first
     if (password) {
         const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -134,6 +142,17 @@ export const deleteUser = async (userId: string, password?: string) => {
 
         const isValid = await verifyPassword(password, user.passwordHash);
         if (!isValid) throw new Error("Invalid password");
+
+        // Enforce 2FA if enabled
+        if (user.twoFactorSecret) {
+            if (!totpToken) {
+                throw new Error("Two-Factor Authentication code required");
+            }
+            const isTotpValid = authenticator.check(totpToken, user.twoFactorSecret);
+            if (!isTotpValid) {
+                throw new Error("Invalid Two-Factor Authentication code");
+            }
+        }
     }
 
     return await prisma.user.delete({

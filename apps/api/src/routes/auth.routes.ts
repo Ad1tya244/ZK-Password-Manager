@@ -12,6 +12,8 @@ router.post("/verify-2fa", loginLimiter, authController.verify2fa);
 router.post("/logout", authController.logout);
 router.get("/me", authenticateToken, authController.me);
 router.delete("/delete", authenticateToken, authController.deleteAccount);
+router.post("/verify-password", authenticateToken, authController.verifyPassword);
+
 router.post("/vek", authenticateToken, authController.saveVEK);
 router.post("/recovery/setup", authenticateToken, authController.setupRecovery);
 router.post("/recovery/init", loginLimiter, authController.initRecovery);

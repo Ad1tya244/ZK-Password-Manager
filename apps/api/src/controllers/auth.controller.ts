@@ -142,7 +142,8 @@ export const me = async (req: Request, res: Response) => {
             user: {
                 id: user.id,
                 username: user.username,
-                hasRecovery: !!user.recoveryKeyHash
+                hasRecovery: !!user.recoveryKeyHash,
+                is2faEnabled: !!user.twoFactorSecret
             }
         });
     } catch (e) {
@@ -150,7 +151,7 @@ export const me = async (req: Request, res: Response) => {
     }
 };
 
-export const deleteAccount = async (req: Request, res: Response) => {
+export const verifyPassword = async (req: Request, res: Response) => {
     try {
         // @ts-ignore
         const userId = req.user?.userId;
@@ -161,11 +162,32 @@ export const deleteAccount = async (req: Request, res: Response) => {
         }
 
         if (!password) {
+            return res.status(400).json({ error: "Password required" });
+        }
+
+        const isValid = await authService.verifyUserPassword(userId, password);
+        return res.json({ isValid });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+export const deleteAccount = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        const { password, totpToken } = req.body;
+
+        if (!userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+
+        if (!password) {
             return res.status(400).json({ error: "Password required to delete account" });
         }
 
         try {
-            await authService.deleteUser(userId, password);
+            await authService.deleteUser(userId, password, totpToken);
         } catch (e: any) {
             return res.status(400).json({ error: e.message || "Failed to delete account" });
         }
