@@ -1,6 +1,6 @@
 # Zero-Knowledge Password Manager
 
-A secure, zero-knowledge password manager built as a monorepo using TurboRepo, Next.js, Express, and Prisma.
+A Zero-Knowledge, security-first password manager implementing client-side AES-GCM encryption, Argon2 password hashing, and TOTP-based two-factor authentication in a zero-knowledge architecture.
 
 ## System Architecture
 
@@ -14,20 +14,21 @@ This project follows a monorepo architecture managed by [TurboRepo](https://turb
 -   **`packages/shared`**: Shared types and utilities used across the application.
 
 ### Security Model
--   **Zero-Knowledge Architecture:** The master password never leaves the client device. It is used to derive a **Key Encryption Key (KEK)** locally.
--   **Vault Encryption Key (VEK):** A randomly generated key (VEK) is used to encrypt all vault items. This VEK is itself encrypted (wrapped) by the KEK and stored on the server. This allows for changing the master password without re-encrypting the entire vault.
--   **Client-Side Encryption:** All encryption and decryption happen in the browser (or client app) using robust cryptographic primitives (AES-GCM, Argon2).
--   **Authentication:** Secure authentication using JWT (JSON Web Tokens) and Argon2 password hashing. Two-Factor Authentication (2FA) is supported via TOTP (Time-based One-Time Password) using Google Authenticator or similar apps.
--   **Security Hygiene:** The `vaultSalt` is rotated upon account recovery to strictly separate the new master password's cryptographic lineage from the old one.
+-   **Zero-Knowledge Architecture:** The master password never leaves the client device. It is hashed (Argon2) locally for authentication and used to derive a **Key Encryption Key (KEK)** for decryption.
+-   **Vault Encryption:** All vault items are encrypted using **AES-GCM (256-bit)** with a random **Vault Encryption Key (VEK)**.
+-   **Key Wrapping:** The VEK is encrypted (wrapped) by the User's KEK. This allows for changing the master password (re-wrapping the VEK) without re-encrypting the entire vault.
+-   **Account Recovery:** A separate, randomly generated **256-bit Recovery Key** can independently derive a KEK to unwrap the VEK, ensuring access is possible even if the master password is lost, without compromising Zero-Knowledge principles.
+-   **Authentication:** Stateless JWT authentication. Critical actions (Account Deletion) require strict **Double Verification** (Master Password + TOTP).
+-   **Network Security:** All sensitive endpoints are protected by **Rate Limiting** to prevent brute-force attacks.
 
 ## Tech Stack
 
 -   **Runtime:** Node.js
 -   **Languages:** TypeScript
--   **Frontend:** Next.js 14, React 18, TailwindCSS
--   **Backend:** Express.js, cookie-parser, otplib (for 2FA)
+-   **Frontend:** Next.js 14, React 18, TailwindCSS, Axios
+-   **Backend:** Express.js, express-rate-limit, cookie-parser, otplib (2FA), qrcode
 -   **Database:** MySQL, Prisma ORM
--   **Cryptography:** Argon2, Libsodium, JWT
+-   **Cryptography:** Argon2 (hashing), Libsodium (encryption), JWT
 -   **Build Tool:** TurboRepo
 
 ## Dependencies
@@ -123,14 +124,33 @@ npm run dev
 To stop the application, press `Ctrl + C` in the terminal where the server is running.
 
 ## Features
--   User Registration & Login (Secure Auth)
--   Two-Factor Authentication (TOTP via Google Authenticator)
--   **Vault Migration:** Automatic upgrade of legacy encryption to the new VEK architecture upon login.
--   **Account Recovery:** Secure Zero-Knowledge account recovery with support for **Recovery Key Rotation** if a key is compromised.
--   **Secure Account Deletion:** Strict 2-step verification (Password + TOTP) for account deletion to prevent accidental or malicious data loss.
--   Create, View, Edit, and Delete Vault Items.
--   Secure Password Generation
--   Password Strength Analysis
+
+### 🔐 Zero-Knowledge Security
+-   **Client-Side Encryption:** All data is encrypted locally using AES-GCM (256-bit) before ever reaching the network.
+-   **Secure Key Derivation:** Master password never leaves the device. Keys are derived using Argon2/PBKDF2.
+-   **Vault Encryption Key (VEK):** Architecture supports changing the master password without re-encrypting the entire vault.
+
+### 🛡️ Authentication & Recovery
+-   **Secure Authentication:** JWT-based stateless authentication with Argon2 password hashing.
+-   **Two-Factor Authentication (2FA):** Time-based One-Time Password (TOTP) integration (Google Authenticator, Authy).
+-   **Account Recovery:** Zero-Knowledge recovery system using a 256-bit Recovery Key.
+    -   **Recovery Key Rotation:** Ability to generate a new recovery key if the previous one is compromised.
+-   **Secure Account Deletion:** Requires strictly verified Master Password AND 2FA code (if enabled) to prevent accidental loss.
+
+### 💎 Vault Management
+-   **CRUD Operations:** Create, Read, Update, and Delete encrypted passwords.
+-   **Secure Item Deletion:** Critical actions require Master Password verification.
+-   **Password Utilities:**
+    -   Built-in strong password generator.
+    -   Password strength analysis.
+    -   One-click copy to clipboard with visual feedback.
+
+### 🚀 Modern Experience & Hardening
+-   **Modern UI:** Sleek, dark-mode interface using Zinc, Cyan (`#05cbf7`), Emerald (`#45d921`), and Red (`#f51d1d`).
+-   **Responsive Design:** Optimized for desktop and mobile viewports.
+-   **API Hardening:**
+    -   Rate Limiting on sensitive endpoints (Login, Registration).
+    -   Strict input validation and sanitization.
 
 ## Project Status
 This project is currently under active development and intended for educational and research purposes. 
