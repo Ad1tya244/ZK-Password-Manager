@@ -38,7 +38,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [strength, setStrength] = useState<StrengthResult>({
         score: 0,
         label: "",
-        color: "bg-slate-700",
+        color: "bg-zinc-700",
         feedback: []
     });
 
@@ -244,7 +244,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-4">
                 <div>
                     <h2 className="text-3xl font-bold text-white tracking-tight">Access Vault</h2>
-                    <p className="text-slate-400 mt-1">Manage your secure credentials</p>
+                    <p className="text-zinc-400 mt-1">Manage your secure credentials</p>
                 </div>
                 <div className="flex gap-3">
                     <button
@@ -267,7 +267,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                     </button>
                     <button
                         onClick={onLogout}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors text-sm font-medium border border-slate-700"
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors text-sm font-medium border border-zinc-700"
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -280,9 +280,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             <div className="grid lg:grid-cols-3 gap-8">
                 {/* Add New Password Form */}
                 <div className="lg:col-span-1">
-                    <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 p-6 rounded-2xl sticky top-8">
+                    <div className="bg-zinc-800/50 backdrop-blur-xl border border-zinc-700/50 p-6 rounded-2xl sticky top-8">
                         <h3 className="text-lg font-semibold mb-6 text-white flex items-center gap-2">
-                            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 text-blue-400">
+                            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                 </svg>
@@ -291,43 +291,43 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                         </h3>
                         <form onSubmit={handleAdd} className="space-y-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Website</label>
+                                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Website</label>
                                 <input
                                     type="text"
                                     value={site}
                                     onChange={(e) => setSite(e.target.value)}
                                     placeholder="e.g. Netflix"
-                                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all"
+                                    className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Username</label>
+                                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Username</label>
                                 <input
                                     type="text"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
                                     placeholder="email@example.com"
-                                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all"
+                                    className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                     required
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Password</label>
+                                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Password</label>
                                 <div className="relative">
                                     <input
                                         type={showPasswordAdd ? "text" : "password"}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="Secure password"
-                                        className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all font-mono pr-20"
+                                        className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all font-mono pr-20"
                                         required
                                     />
                                     <div className="absolute right-2 top-2 flex items-center gap-1">
                                         <button
                                             type="button"
                                             onClick={() => setShowPasswordAdd(!showPasswordAdd)}
-                                            className="p-1 text-slate-500 hover:text-white rounded transition-colors"
+                                            className="p-1 text-zinc-500 hover:text-white rounded transition-colors"
                                         >
                                             {showPasswordAdd ? (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -343,7 +343,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         <button
                                             type="button"
                                             onClick={() => setPassword("Gen" + Math.random().toString(36).slice(-10) + "!" + Math.floor(Math.random() * 100))}
-                                            className="p-1 text-xs bg-slate-800 text-slate-400 hover:text-white rounded border border-slate-700"
+                                            className="p-1 text-xs bg-zinc-800 text-zinc-400 hover:text-white rounded border border-zinc-700"
                                         >
                                             Gen
                                         </button>
@@ -354,17 +354,17 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 {password && (
                                     <div className="mt-2 space-y-1">
                                         <div className="flex justify-between items-center text-xs">
-                                            <span className="text-slate-400">Strength: <span className="text-white font-medium">{strength.label}</span></span>
-                                            <span className="text-slate-500">{password.length} chars</span>
+                                            <span className="text-zinc-400">Strength: <span className="text-white font-medium">{strength.label}</span></span>
+                                            <span className="text-zinc-500">{password.length} chars</span>
                                         </div>
-                                        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                                             <div
                                                 className={`h-full transition-all duration-300 ${strength.color}`}
                                                 style={{ width: `${(strength.score / 4) * 100}%` }}
                                             />
                                         </div>
                                         {strength.feedback.length > 0 && (
-                                            <p className="text-[10px] text-slate-500 leading-tight">
+                                            <p className="text-[10px] text-zinc-500 leading-tight">
                                                 Tip: {strength.feedback[0]}
                                             </p>
                                         )}
@@ -372,7 +372,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 )}
                             </div>
 
-                            <button type="submit" className="w-full mt-2 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-medium transition-colors shadow-lg shadow-blue-900/20">
+                            <button type="submit" className="w-full mt-2 bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl font-medium transition-colors shadow-lg shadow-cyan-900/20">
                                 Encrypt & Save
                             </button>
                         </form>
@@ -382,35 +382,35 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                 {/* Password List */}
                 <div className="lg:col-span-2">
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-500 animate-pulse">
-                            <div className="w-12 h-12 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                        <div className="flex flex-col items-center justify-center py-20 text-zinc-500 animate-pulse">
+                            <div className="w-12 h-12 border-4 border-zinc-700 border-t-cyan-500 rounded-full animate-spin mb-4"></div>
                             <p>Decrypting vault contents...</p>
                         </div>
                     ) : items.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30">
-                            <svg className="w-16 h-16 text-slate-700 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 rounded-2xl bg-zinc-900/30">
+                            <svg className="w-16 h-16 text-zinc-700 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
-                            <p className="text-slate-500 font-medium">Your vault is empty</p>
-                            <p className="text-slate-600 text-sm mt-1">Add your first secure credential to get started</p>
+                            <p className="text-zinc-500 font-medium">Your vault is empty</p>
+                            <p className="text-zinc-600 text-sm mt-1">Add your first secure credential to get started</p>
                         </div>
                     ) : (
                         <div className="grid gap-4">
                             {items.map((item) => (
-                                <div key={item.id} className="group bg-slate-800/40 hover:bg-slate-800/80 backdrop-blur-sm border border-slate-700/50 hover:border-blue-500/30 p-5 rounded-2xl transition-all duration-200">
+                                <div key={item.id} className="group bg-zinc-800/40 hover:bg-zinc-800/80 backdrop-blur-sm border border-zinc-700/50 hover:border-cyan-500/30 p-5 rounded-2xl transition-all duration-200">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center text-xl font-bold text-white border border-slate-600/50 shadow-inner">
+                                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-700 to-zinc-800 flex items-center justify-center text-xl font-bold text-white border border-zinc-600/50 shadow-inner">
                                                 {item.site.charAt(0).toUpperCase()}
                                             </div>
                                             <div>
                                                 <h4 className="text-lg font-semibold text-white">{item.site}</h4>
-                                                <p className="text-slate-400 text-sm">{item.username}</p>
+                                                <p className="text-zinc-400 text-sm">{item.username}</p>
                                             </div>
                                         </div>
                                         <button
                                             onClick={() => handleDelete(item.id)}
-                                            className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                            className="opacity-0 group-hover:opacity-100 p-2 text-zinc-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
                                             title="Delete Password"
                                         >
                                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -419,22 +419,22 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         </button>
                                     </div>
 
-                                    <div className="mt-4 pt-4 border-t border-slate-700/50 flex items-center justify-between">
+                                    <div className="mt-4 pt-4 border-t border-zinc-700/50 flex items-center justify-between">
                                         <div className="flex-1 mr-4">
-                                            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Password</p>
+                                            <p className="text-xs text-zinc-500 uppercase tracking-wider font-semibold mb-1">Password</p>
                                             <div className="flex gap-2">
                                                 <div
                                                     onClick={() => copyToClipboard(item.password, item.id)}
-                                                    className="flex-1 font-mono text-sm bg-slate-950/50 text-emerald-400 px-3 py-2 rounded-lg cursor-pointer hover:bg-black/40 transition-colors flex items-center justify-between group/pass"
+                                                    className="flex-1 font-mono text-sm bg-zinc-950/50 text-emerald-400 px-3 py-2 rounded-lg cursor-pointer hover:bg-black/40 transition-colors flex items-center justify-between group/pass"
                                                 >
                                                     <span className="truncate mr-2">{item.password.replace(/./g, '•')}</span>
-                                                    <span className="text-xs text-slate-500 group-hover/pass:text-white transition-colors">
+                                                    <span className="text-xs text-zinc-500 group-hover/pass:text-white transition-colors">
                                                         {copiedId === item.id ? "Copied!" : "Click to Copy"}
                                                     </span>
                                                 </div>
                                                 <button
                                                     onClick={() => handleEditClick(item)}
-                                                    className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors"
+                                                    className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors"
                                                     title="Edit Password"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -444,8 +444,8 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                             </div>
                                         </div>
                                         <div className="text-right ml-2">
-                                            <p className="text-xs text-slate-600">Added</p>
-                                            <p className="text-xs text-slate-500">{new Date(item.createdAt).toLocaleDateString()}</p>
+                                            <p className="text-xs text-zinc-600">Added</p>
+                                            <p className="text-xs text-zinc-500">{new Date(item.createdAt).toLocaleDateString()}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -458,13 +458,13 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             {/* Delete Account Modal */}
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-xl font-bold text-white">Delete Account</h3>
                                 <button
                                     onClick={() => setIsDeleteModalOpen(false)}
-                                    className="text-slate-400 hover:text-white transition-colors"
+                                    className="text-zinc-400 hover:text-white transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -474,24 +474,24 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
                             {deleteStep === 1 && (
                                 <div className="space-y-4">
-                                    <p className="text-slate-400 text-sm">
+                                    <p className="text-zinc-400 text-sm">
                                         Please enter your Master Password to proceed with account deletion.
                                     </p>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Master Password</label>
+                                        <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Master Password</label>
                                         <div className="relative">
                                             <input
                                                 type={showPasswordDelete ? "text" : "password"}
                                                 value={deletePassword}
                                                 onChange={(e) => setDeletePassword(e.target.value)}
-                                                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all pr-10"
+                                                className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 text-white placeholder-zinc-600 outline-none transition-all pr-10"
                                                 placeholder="Enter password"
                                                 autoFocus
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() => setShowPasswordDelete(!showPasswordDelete)}
-                                                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                                                className="absolute right-3 top-2.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                                             >
                                                 {showPasswordDelete ? (
                                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -509,7 +509,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     <div className="flex justify-end gap-3 pt-2">
                                         <button
                                             onClick={() => setIsDeleteModalOpen(false)}
-                                            className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium text-sm"
+                                            className="px-4 py-2 rounded-lg text-zinc-300 hover:bg-zinc-800 transition-colors font-medium text-sm"
                                             disabled={isDeleting}
                                         >
                                             Cancel
@@ -533,7 +533,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                                 }
                                             }}
                                             disabled={!deletePassword || isDeleting}
-                                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                            className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                         >
                                             {isDeleting ? "Verifying..." : "Next"}
                                         </button>
@@ -546,12 +546,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     {is2faEnabled ? (
                                         <>
                                             <div>
-                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Authenticator Code (2FA)</label>
+                                                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Authenticator Code (2FA)</label>
                                                 <input
                                                     type="text"
                                                     value={deleteTotp}
                                                     onChange={(e) => setDeleteTotp(e.target.value.replace(/[^0-9]/g, ''))}
-                                                    className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all tracking-widest text-center"
+                                                    className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all tracking-widest text-center"
                                                     placeholder="000000"
                                                     maxLength={6}
                                                     autoFocus
@@ -586,7 +586,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     <div className="flex justify-end gap-3 pt-2">
                                         <button
                                             onClick={() => setDeleteStep(1)}
-                                            className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium text-sm"
+                                            className="px-4 py-2 rounded-lg text-zinc-300 hover:bg-zinc-800 transition-colors font-medium text-sm"
                                             disabled={isDeleting}
                                         >
                                             Back
@@ -628,13 +628,13 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             {
                 editingItem && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                        <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                             <div className="p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-xl font-bold text-white">Edit Entry</h3>
                                     <button
                                         onClick={() => setEditingItem(null)}
-                                        className="text-slate-400 hover:text-white transition-colors"
+                                        className="text-zinc-400 hover:text-white transition-colors"
                                     >
                                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -644,44 +644,44 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
                                 <form onSubmit={handleUpdate} className="space-y-4">
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Website</label>
+                                        <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Website</label>
                                         <input
                                             type="text"
                                             value={editSite}
                                             onChange={(e) => setEditSite(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all"
+                                            className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                             required
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Username</label>
+                                        <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Username</label>
                                         <input
                                             type="text"
                                             value={editUsername}
                                             onChange={(e) => setEditUsername(e.target.value)}
-                                            className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all"
+                                            className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                             required
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Password</label>
+                                        <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Password</label>
                                         <div className="relative">
                                             <input
                                                 type={showEditPassword ? "text" : "password"}
                                                 value={editPassword}
                                                 onChange={(e) => setEditPassword(e.target.value)}
-                                                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all font-mono pr-20"
+                                                className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all font-mono pr-20"
                                                 required
                                             />
                                             <div className="absolute right-2 top-2 flex items-center gap-1">
                                                 <button
                                                     type="button"
                                                     onClick={() => setShowEditPassword(!showEditPassword)}
-                                                    className="p-1 text-slate-500 hover:text-white rounded transition-colors"
+                                                    className="p-1 text-zinc-500 hover:text-white rounded transition-colors"
                                                 >
                                                     {showEditPassword ? (
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                                                         </svg>
                                                     ) : (
                                                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -693,7 +693,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => setEditPassword("Gen" + Math.random().toString(36).slice(-10) + "!" + Math.floor(Math.random() * 100))}
-                                                    className="p-1 text-xs bg-slate-800 text-slate-400 hover:text-white rounded border border-slate-700"
+                                                    className="p-1 text-xs bg-zinc-800 text-zinc-400 hover:text-white rounded border border-zinc-700"
                                                 >
                                                     Gen
                                                 </button>
@@ -705,13 +705,13 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         <button
                                             type="button"
                                             onClick={() => setEditingItem(null)}
-                                            className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium text-sm"
+                                            className="px-4 py-2 rounded-lg text-zinc-300 hover:bg-zinc-800 transition-colors font-medium text-sm"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-colors shadow-lg shadow-blue-900/20"
+                                            className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-sm transition-colors shadow-lg shadow-cyan-900/20"
                                         >
                                             Save Changes
                                         </button>
@@ -724,7 +724,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             }
             {isItemDeleteModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-xl font-bold text-white">Delete Item</h3>
@@ -734,7 +734,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         setItemToDelete(null);
                                         setItemDeletePassword("");
                                     }}
-                                    className="text-slate-400 hover:text-white transition-colors"
+                                    className="text-zinc-400 hover:text-white transition-colors"
                                 >
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -742,26 +742,26 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 </button>
                             </div>
 
-                            <p className="text-slate-400 text-sm mb-4">
+                            <p className="text-zinc-400 text-sm mb-4">
                                 Are you sure you want to delete this item? This action cannot be undone.
                                 Please enter your master password to confirm.
                             </p>
 
                             <div className="mb-6">
-                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 ml-1">Master Password</label>
+                                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Master Password</label>
                                 <div className="relative">
                                     <input
                                         type={showItemDeletePassword ? "text" : "password"}
                                         value={itemDeletePassword}
                                         onChange={(e) => setItemDeletePassword(e.target.value)}
-                                        className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-white placeholder-slate-600 outline-none transition-all pr-10"
+                                        className="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all pr-10"
                                         placeholder="Enter Master Password"
                                         autoFocus
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowItemDeletePassword(!showItemDeletePassword)}
-                                        className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                                        className="absolute right-3 top-2.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                                     >
                                         {showItemDeletePassword ? (
                                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -784,7 +784,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         setItemToDelete(null);
                                         setItemDeletePassword("");
                                     }}
-                                    className="px-4 py-2 rounded-lg text-slate-300 hover:bg-slate-800 transition-colors font-medium text-sm"
+                                    className="px-4 py-2 rounded-lg text-zinc-300 hover:bg-zinc-800 transition-colors font-medium text-sm"
                                     disabled={isItemDeleting}
                                 >
                                     Cancel

@@ -49,16 +49,16 @@ export default function Home() {
     if (loading) return <main className="p-24 text-center">Loading...</main>;
 
     return (
-        <main className="flex min-h-screen flex-col items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-white">
+        <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-zinc-950 to-black text-white">
             {isAuthenticated ? (
                 <VaultDashboard onLogout={handleLogout} />
             ) : (
                 <div className="flex flex-col items-center w-full px-4">
                     <div className="mb-8 text-center">
-                        <h1 className="text-5xl font-black mb-3 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight">
+                        <h1 className="text-5xl font-black mb-3 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-emerald-400 tracking-tight">
                             ZK Vault
                         </h1>
-                        <p className="text-slate-500 font-medium">Zero-Knowledge Architecture</p>
+                        <p className="text-zinc-500 font-medium">Zero-Knowledge Architecture</p>
                     </div>
                     <AuthForm onLogin={handleLogin} />
                 </div>

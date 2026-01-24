@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { api, AuthResponse, VaultItem } from "../lib/api";
+import { api, AuthResponse } from "../lib/api";
 import { EncryptionService, deriveRecoveryKEK } from "../utils/encryption.utils";
-import { bufferToBase64, base64ToBuffer } from "@zk/crypto/client";
+import { base64ToBuffer } from "@zk/crypto/client";
 
 
 export default function AuthForm({ onLogin }: { onLogin: () => void }) {
@@ -174,34 +174,10 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             }
 
             // 3. Unwrap VEK using Recovery KEK
-            // We need a helper for this in EncryptionService? 
-            // Or just manually do it here since we have the KEK and blobs.
-            // But we need to use `window.crypto.subtle.decrypt`.
-            // Let's use the internal logic or standard WebCrypto.
-            // Since `EncryptionService` manages the session, we should use it to "Initialize Session from Recovery".
-            // But `EncryptionService.initSession` takes a password.
-            // We need `EncryptionService.initSessionWithRecovery(recoveryKEK, vekData)`.
-            // OR simpler: decrypt VEK here, then pass it to `initSession`? 
-            // EncryptionService expects `vekData` (encrypted with password-derived KEK).
-            // Here we have VEK encrypted with Recovery KEK.
-
-            // Let's decrypt the VEK bytes directly here.
             const ciphertext = base64ToBuffer(recoveryEncryptedVEK);
             const iv = base64ToBuffer(recoveryVekIV);
             const tag = base64ToBuffer(recoveryVekAuthTag);
 
-            // Note: `base64ToBuffer` is not exposed globally, imported from `@zk/crypto/client`.
-            // I imported it at top.
-            // Wait, I need to check imports. `import { base64ToBuffer } ...`
-            // So `base64ToBuffer` is available.
-
-            // Construct combined buffer for decrypt logic (assuming standard GCM usage in this project)
-            // But wait, `EncryptionService` helpers do combined. 
-            // Let's manually decrypt using standard GCM if possible.
-            // Or better: Use `EncryptionService` to init session with raw key?
-            // `EncryptionService` doesn't support init with raw key.
-
-            // Let's do manual decryption here.
             const combined = new Uint8Array(ciphertext.byteLength + tag.byteLength);
             combined.set(new Uint8Array(ciphertext));
             combined.set(new Uint8Array(tag), ciphertext.byteLength);
@@ -212,47 +188,13 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 combined as BufferSource
             );
 
-            // Now we have the Raw VEK.
-            // We need to RE-ENCRYPT it with the NEW Password.
             // 4. Validate New Password
             const valErr = validateMasterPassword(newPassword);
             if (valErr) throw new Error(valErr);
 
             // 5. Initialize a NEW Session with New Password and the Existing Raw VEK
-            // But `EncryptionService.initSession` generates a new random VEK if none provided.
-            // OR if provided, unwraps it with password-derived KEK.
-            // We have neither. We have Raw VEK.
-            // We need `EncryptionService.initSessionWithRawVEK(password, rawVEK)`.
-            // I should add this method? 
-            // OR: I can just use `EncryptionService` to wrap the VEK with new password KEK manually?
-            // Yes, calling `deriveKey(newPassword)`...
-
-            // Let's ADD `initSessionWithRawVEK` to EncryptionService. it is cleaner.
-            // I'll assume it exists for now and update EncryptionService next step?
-            // No, preventing errors is better.
-            // I'll stick to: 
-            // a) Derive KEK for New Password. 
-            // b) Wrap Raw VEK with New Password KEK.
-            // c) Call `recoverAccount` API with new encrypted blobs.
-
-            // Actually, `EncryptionService.initSession` sets the global session. We want that.
-            // If I add `EncryptionService.setSession(kek, vek)`, I can use it.
-            // But `initSession` does logic.
-
-            // Let's just Add `restoreSession(password, rawVEK)` to EncryptionService.
-            // I'll implement it shortly.
-
-            // For now, in this file:
-            // I will use `EncryptionService.restoreSession(newPassword, rawVek)`.
-            // This method will:
-            // 1. Derive KEK from newPassword (and random salt).
-            // 2. Wrap `rawVek` with KEK.
-            // 3. Set global session.
-            // 4. Return the new stored blobs (encryptedVEK, iv, authTag, salt).
-
             const restoreResult = await EncryptionService.restoreSession(newPassword, rawVek);
 
-            // 6. Submit to Server
             // 6. Submit to Server
             await api.post("/auth/recovery/reset", {
                 recoveryKeyHash,
@@ -270,7 +212,6 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             setPassword(""); // Clear any previous input
             setStatusMessage("Recovery successful! Please log in with your new password.");
 
-            // onLogin(); // Do NOT auto-login, as we don't have a token/cookie yet. User must log in.
         } catch (err: any) {
             console.error("Recovery Error:", err);
             // Log if it's a network error explicitly
@@ -285,14 +226,14 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     };
 
     return (
-        <div className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-slate-700 p-8 rounded-2xl shadow-2xl relative overflow-hidden">
+        <div className="w-full max-w-md bg-zinc-900/50 backdrop-blur-xl border border-zinc-700 p-8 rounded-2xl shadow-2xl relative overflow-hidden">
             {/* Background decoration */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-sky-500 via-blue-500 to-teal-500"></div>
 
             <h2 className="text-3xl font-bold mb-2 text-white text-center tracking-tight">
                 {qrCode ? "Setup 2FA" : (require2fa ? "Two-Factor Auth" : (isRecovery ? "Recover Account" : (isLogin ? "Welcome Back" : "Create Account")))}
             </h2>
-            <p className="text-slate-400 text-center mb-8 text-sm">
+            <p className="text-zinc-400 text-center mb-8 text-sm">
                 {qrCode
                     ? "Scan with Google Authenticator"
                     : (require2fa ? "Enter code from Authenticator App" : (isRecovery ? "Enter your Recovery Key" : (isLogin ? "Unlock your secure vault" : "Zero-knowledge encryption setup")))
@@ -306,25 +247,25 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                             // RECOVERY INPUTS
                             <>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider ml-1">Recovery Key</label>
+                                    <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider ml-1">Recovery Key</label>
                                     <input
                                         type="text"
                                         value={recoveryKey}
                                         onChange={(e) => setRecoveryKey(e.target.value.replace(/[^a-fA-F0-9]/g, ''))} // Hex only
-                                        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-white text-sm font-mono placeholder-slate-600 transition-all shadow-inner"
+                                        className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-white text-sm font-mono placeholder-zinc-600 transition-all shadow-inner"
                                         placeholder="Enter your 64-character recovery key"
                                         required
                                         autoComplete="off"
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider ml-1">New Master Password</label>
+                                    <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider ml-1">New Master Password</label>
                                     <div className="relative">
                                         <input
                                             type={showPassword ? "text" : "password"}
                                             value={newPassword}
                                             onChange={(e) => setNewPassword(e.target.value)}
-                                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all font-mono shadow-inner pr-10"
+                                            className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none text-white placeholder-zinc-500 transition-all font-mono shadow-inner pr-10"
                                             placeholder="Create new master password"
                                             required
                                             autoComplete="new-password"
@@ -332,7 +273,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                         <button
                                             type="button"
                                             onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 transition-colors"
+                                            className="absolute right-3 top-3.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                                         >
                                             {showPassword ? (
                                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -350,7 +291,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                         <svg className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                         </svg>
-                                        <p className="text-[10px] text-slate-400 leading-tight">
+                                        <p className="text-[10px] text-zinc-400 leading-tight">
                                             We'll re-encrypt your vault with this new password. If you lose this, you'll need your Recovery Key again.
                                         </p>
                                     </div>
@@ -360,27 +301,27 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                             // NORMAL LOGIN/REGISTER INPUTS
                             <>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider ml-1">Username</label>
+                                    <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider ml-1">Username</label>
                                     <input
                                         type="text"
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
-                                        className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all shadow-inner"
+                                        className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none text-white placeholder-zinc-500 transition-all shadow-inner"
                                         placeholder="username"
                                         required
                                         autoComplete="username"
                                     />
-                                    {!isLogin && <p className="text-[10px] text-slate-500 ml-1">Letters and numbers only.</p>}
+                                    {!isLogin && <p className="text-[10px] text-zinc-500 ml-1">Letters and numbers only.</p>}
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider ml-1">Master Password</label>
+                                    <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider ml-1">Master Password</label>
                                     <div className="relative">
                                         <input
                                             type={showPassword ? "text" : "password"}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
-                                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all font-mono shadow-inner pr-10"
+                                            className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none text-white placeholder-zinc-500 transition-all font-mono shadow-inner pr-10"
                                             placeholder="••••••••••••"
                                             required
                                             autoComplete={isLogin ? "current-password" : "new-password"}
@@ -388,7 +329,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                         <button
                                             type="button"
                                             onClick={() => setShowPassword(!showPassword)}
-                                            className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 transition-colors"
+                                            className="absolute right-3 top-3.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                                         >
                                             {showPassword ? (
                                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -403,10 +344,10 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                         </button>
                                     </div>
                                     <div className="flex items-start gap-2 mt-2 px-1">
-                                        <svg className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg className="w-4 h-4 text-teal-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                         </svg>
-                                        <p className="text-[10px] text-slate-400 leading-tight">
+                                        <p className="text-[10px] text-zinc-400 leading-tight">
                                             Your password never leaves this device. It is used to encrypt your vault locally.
                                         </p>
                                     </div>
@@ -426,13 +367,13 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 {(require2fa || qrCode) && (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
                         <div className="space-y-2">
-                            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider ml-1">Authenticator Code</label>
+                            <label className="text-xs font-semibold text-zinc-300 uppercase tracking-wider ml-1">Authenticator Code</label>
                             <input
                                 type="text"
                                 value={otp}
                                 onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
                                 maxLength={6}
-                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-white text-center text-2xl tracking-[0.5em] placeholder-slate-700 transition-all shadow-inner font-mono"
+                                className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none text-white text-center text-2xl tracking-[0.5em] placeholder-zinc-700 transition-all shadow-inner font-mono"
                                 placeholder="000000"
                                 autoFocus
                                 required
@@ -442,7 +383,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 )}
 
                 {statusMessage && (
-                    <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm flex items-center justify-center gap-2">
+                    <div className={`p-3 rounded-lg border text-sm flex items-center justify-center gap-2 ${statusMessage.toLowerCase().includes("success") ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"}`}>
                         <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
@@ -462,7 +403,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-blue-500/20 transform transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-cyan-500/20 transform transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {loading ? (
                         <span className="flex items-center justify-center gap-2">
@@ -476,14 +417,14 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 </button>
             </form>
 
-            <div className="mt-8 text-center border-t border-slate-700/50 pt-6 flex flex-col gap-3">
+            <div className="mt-8 text-center border-t border-zinc-700/50 pt-6 flex flex-col gap-3">
                 {!isRecovery && isLogin && !require2fa && (
                     <button
                         onClick={() => {
                             setIsRecovery(true);
                             setError("");
                         }}
-                        className="text-slate-400 text-xs hover:text-white transition-colors"
+                        className="text-zinc-400 text-xs hover:text-white transition-colors"
                     >
                         Forgot Password? <span className="text-emerald-400 hover:underline">Recover Account</span>
                     </button>
@@ -504,14 +445,14 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                         setError("");
                         setStatusMessage("");
                     }}
-                    className="text-slate-400 text-sm hover:text-white transition-colors"
+                    className="text-zinc-400 text-sm hover:text-white transition-colors"
                 >
                     {isRecovery ? (
-                        <span className="text-slate-400 hover:underline">Back to Login</span>
+                        <span className="text-zinc-400 hover:underline">Back to Login</span>
                     ) : (isLogin ? (
-                        <>New here? <span className="text-blue-400 hover:underline">Create a vault</span></>
+                        <>New here? <span className="text-cyan-400 hover:underline">Create a vault</span></>
                     ) : (
-                        <>Already have a vault? <span className="text-blue-400 hover:underline">Log in</span></>
+                        <>Already have a vault? <span className="text-cyan-400 hover:underline">Log in</span></>
                     ))}
                 </button>
             </div>
