@@ -21,6 +21,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [is2faEnabled, setIs2faEnabled] = useState(false);
     const [deleteTotp, setDeleteTotp] = useState("");
 
+    // Error States
+    const [addError, setAddError] = useState("");
+    const [editError, setEditError] = useState("");
+    const [deleteItemError, setDeleteItemError] = useState("");
+    const [deleteAccountError, setDeleteAccountError] = useState("");
+
     const [showPasswordAdd, setShowPasswordAdd] = useState(false);
     const [showPasswordDelete, setShowPasswordDelete] = useState(false);
 
@@ -94,9 +100,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
+        setAddError("");
 
         if (password.length < 8) {
-            alert("Password must be at least 8 characters long for security.");
+            setAddError("Password must be at least 8 characters long for security.");
             return;
         }
 
@@ -117,7 +124,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         } catch (e: any) {
             console.error("Save Error:", e);
             const errorMessage = e.response?.data?.error || e.message || "Failed to save item";
-            alert(`Error: ${errorMessage}`);
+            setAddError(errorMessage);
         }
     };
 
@@ -139,8 +146,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     const confirmItemDelete = async () => {
         if (!itemToDelete) return;
+        setDeleteItemError("");
         if (!itemDeletePassword) {
-            alert("Please enter your master password to confirm deletion.");
+            setDeleteItemError("Please enter your master password to confirm deletion.");
             return;
         }
 
@@ -149,7 +157,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             // 1. Verify Master Password
             const res = await api.post<{ isValid: boolean }>("/auth/verify-password", { password: itemDeletePassword });
             if (!res.data.isValid) {
-                alert("Incorrect Master Password");
+                setDeleteItemError("Incorrect Master Password");
                 setIsItemDeleting(false);
                 return;
             }
@@ -164,7 +172,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             setItemDeletePassword("");
         } catch (e: any) {
             console.error("Delete Error:", e);
-            alert(e.response?.data?.error || "Failed to verify password or delete item");
+            setDeleteItemError(e.response?.data?.error || "Failed to verify password or delete item");
         } finally {
             setIsItemDeleting(false);
         }
@@ -181,9 +189,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const handleUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingItem) return;
+        setEditError("");
 
         if (editPassword.length < 8) {
-            alert("Password must be at least 8 characters long for security.");
+            setEditError("Password must be at least 8 characters long for security.");
             return;
         }
 
@@ -202,11 +211,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         } catch (e: any) {
             console.error("Update Error:", e);
             const errorMessage = e.response?.data?.error || e.message || "Failed to update item";
-            alert(`Error: ${errorMessage}`);
+            setEditError(errorMessage);
         }
     };
 
     const openDeleteModal = () => {
+        setDeleteAccountError("");
         setDeletePassword("");
         setDeleteTotp("");
         setDeleteStep(1);
@@ -223,7 +233,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             });
             onLogout();
         } catch (e: any) {
-            alert(e.response?.data?.error || "Failed to delete account");
+            setDeleteAccountError(e.response?.data?.error || "Failed to delete account");
             setIsDeleting(false);
         }
     };
@@ -372,6 +382,15 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 )}
                             </div>
 
+                            {addError && (
+                                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
+                                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {addError}
+                                </div>
+                            )}
+
                             <button type="submit" className="w-full mt-2 bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl font-medium transition-colors shadow-lg shadow-cyan-900/20">
                                 Encrypt & Save
                             </button>
@@ -506,6 +525,16 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                             </button>
                                         </div>
                                     </div>
+
+                                    {deleteAccountError && (
+                                        <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {deleteAccountError}
+                                        </div>
+                                    )}
+
                                     <div className="flex justify-end gap-3 pt-2">
                                         <button
                                             onClick={() => setIsDeleteModalOpen(false)}
@@ -519,14 +548,15 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                                 if (deletePassword) {
                                                     setIsDeleting(true);
                                                     try {
+                                                        setDeleteAccountError("");
                                                         const res = await api.post<{ isValid: boolean }>("/auth/verify-password", { password: deletePassword });
                                                         if (res.data.isValid) {
                                                             setDeleteStep(2);
                                                         } else {
-                                                            alert("Incorrect Password");
+                                                            setDeleteAccountError("Incorrect Password");
                                                         }
                                                     } catch (e: any) {
-                                                        alert(e.response?.data?.error || "Failed to verify password");
+                                                        setDeleteAccountError(e.response?.data?.error || "Failed to verify password");
                                                     } finally {
                                                         setIsDeleting(false);
                                                     }
@@ -540,6 +570,8 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     </div>
                                 </div>
                             )}
+
+
 
                             {deleteStep === 2 && (
                                 <div className="space-y-4">
@@ -580,6 +612,15 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                                     This action is irreversible. All your encrypted passwords and vault data will be permanently deleted.
                                                 </p>
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {deleteAccountError && (
+                                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
+                                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            {deleteAccountError}
                                         </div>
                                     )}
 
@@ -777,6 +818,17 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 </div>
                             </div>
 
+
+
+                            {deleteItemError && (
+                                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
+                                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {deleteItemError}
+                                </div>
+                            )}
+
                             <div className="flex justify-end gap-3">
                                 <button
                                     onClick={() => {
@@ -809,8 +861,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                </div >
+            )
+            }
         </div >
     );
 }
