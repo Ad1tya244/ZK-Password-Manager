@@ -113,6 +113,10 @@ npx prisma generate
 ```
 
 ### 5. Running the Project
+From terminal, start mysql server by running:
+```bash
+brew services start mysql
+```
 From the root directory, start the development servers for both the frontend and backend:
 ```bash
 npm run dev
