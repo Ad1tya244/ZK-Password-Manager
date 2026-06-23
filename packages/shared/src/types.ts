@@ -1,1 +1,17 @@
-export type ExampleType = string;
+export interface TokenPayload {
+    userId: string;
+    username: string;
+}
+
+export interface DecryptedVaultItem {
+    id: string;
+    userId: string;
+    encryptedBlob: string;
+    iv: string;
+    authTag: string;
+    site: string;
+    username: string;
+    password: string;
+    createdAt: string;
+    updatedAt: string;
+}

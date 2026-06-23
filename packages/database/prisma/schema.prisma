@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/client"
 }
 
 datasource db {
@@ -27,6 +28,7 @@ model User {
   recoveryEncryptedVEK Bytes?
   recoveryVekIV        Bytes?
   recoveryVekAuthTag   Bytes?
+  recoveryConfiguredAt DateTime?
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

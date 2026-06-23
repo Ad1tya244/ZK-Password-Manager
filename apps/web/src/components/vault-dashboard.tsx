@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { api, VaultItem } from "../lib/api";
+import { DecryptedVaultItem } from "@zk/shared";
 import { EncryptionService } from "../utils/encryption.utils";
 import { analyzePasswordStrength, StrengthResult } from "../utils/password-strength";
 import RecoverySetup from "./auth/recovery-setup";
 
 export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
-    const [items, setItems] = useState<any[]>([]);
+    const [items, setItems] = useState<DecryptedVaultItem[]>([]);
     const [hasRecovery, setHasRecovery] = useState(false);
     const [site, setSite] = useState("");
     const [username, setUsername] = useState("");
@@ -32,9 +33,11 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     // Recovery State
     const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
+    const [recoveryConfiguredAt, setRecoveryConfiguredAt] = useState<string | null>(null);
+    const [isRecoveryDetailsOpen, setIsRecoveryDetailsOpen] = useState(false);
 
     // Edit State
-    const [editingItem, setEditingItem] = useState<any>(null);
+    const [editingItem, setEditingItem] = useState<DecryptedVaultItem | null>(null);
     const [editSite, setEditSite] = useState("");
     const [editUsername, setEditUsername] = useState("");
     const [editPassword, setEditPassword] = useState("");
@@ -80,9 +83,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     const loadProfile = async () => {
         try {
-            const res = await api.get<{ user: { hasRecovery: boolean; is2faEnabled: boolean } }>("/auth/me");
+            const res = await api.get<{ user: { hasRecovery: boolean; is2faEnabled: boolean; recoveryConfiguredAt: string | null } }>("/auth/me");
             setHasRecovery(res.data.user?.hasRecovery || false);
             setIs2faEnabled(res.data.user?.is2faEnabled || false);
+            setRecoveryConfiguredAt(res.data.user?.recoveryConfiguredAt || null);
         } catch (e) {
             console.error("Failed to load profile", e);
         }
@@ -178,7 +182,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         }
     };
 
-    const handleEditClick = (item: any) => {
+    const handleEditClick = (item: DecryptedVaultItem) => {
         setEditingItem(item);
         setEditSite(item.site);
         setEditUsername(item.username);
@@ -266,15 +270,27 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                         </svg>
                         Delete Account
                     </button>
-                    <button
-                        onClick={handleSetupRecovery}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-sm font-medium border border-emerald-500/20"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Setup Recovery
-                    </button>
+                    {!hasRecovery ? (
+                        <button
+                            onClick={handleSetupRecovery}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-sm font-medium border border-emerald-500/20"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Setup Recovery
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => setIsRecoveryDetailsOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors text-sm font-medium border border-emerald-500/20"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Recovery Key Configured
+                        </button>
+                    )}
                     <button
                         onClick={onLogout}
                         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors text-sm font-medium border border-zinc-700"
@@ -288,9 +304,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
-                {/* Add New Password Form */}
-                <div className="lg:col-span-1">
-                    <div className="bg-zinc-800/50 backdrop-blur-xl border border-zinc-700/50 p-6 rounded-2xl sticky top-8">
+                {/* Add New Password Form & Recovery Settings */}
+                <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-8 h-fit animate-fade-in">
+                    <div className="bg-zinc-800/50 backdrop-blur-xl border border-zinc-700/50 p-6 rounded-2xl">
                         <h3 className="text-lg font-semibold mb-6 text-white flex items-center gap-2">
                             <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -309,7 +325,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     placeholder="e.g. Netflix"
                                     className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                     required
-                                />
+                                  />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Username</label>
@@ -320,7 +336,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     placeholder="email@example.com"
                                     className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all"
                                     required
-                                />
+                                  />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5 ml-1">Password</label>
@@ -332,35 +348,33 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         placeholder="Secure password"
                                         className="w-full px-4 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 text-white placeholder-zinc-600 outline-none transition-all font-mono pr-20"
                                         required
-                                    />
+                                      />
                                     <div className="absolute right-2 top-2 flex items-center gap-1">
                                         <button
                                             type="button"
                                             onClick={() => setShowPasswordAdd(!showPasswordAdd)}
                                             className="p-1 text-zinc-500 hover:text-white rounded transition-colors"
-                                        >
+                                          >
                                             {showPasswordAdd ? (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                                                 </svg>
-                                            ) : (
+                                              ) : (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                 </svg>
-                                            )}
+                                              )}
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setPassword("Gen" + Math.random().toString(36).slice(-10) + "!" + Math.floor(Math.random() * 100))}
                                             className="p-1 text-xs bg-zinc-800 text-zinc-400 hover:text-white rounded border border-zinc-700"
-                                        >
+                                          >
                                             Gen
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* Password Strength Meter */}
                                 {password && (
                                     <div className="mt-2 space-y-1">
                                         <div className="flex justify-between items-center text-xs">
@@ -371,17 +385,16 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                             <div
                                                 className={`h-full transition-all duration-300 ${strength.color}`}
                                                 style={{ width: `${(strength.score / 4) * 100}%` }}
-                                            />
+                                              />
                                         </div>
                                         {strength.feedback.length > 0 && (
                                             <p className="text-[10px] text-zinc-500 leading-tight">
                                                 Tip: {strength.feedback[0]}
                                             </p>
-                                        )}
+                                          )}
                                     </div>
-                                )}
+                                  )}
                             </div>
-
                             {addError && (
                                 <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
                                     <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -389,8 +402,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     </svg>
                                     {addError}
                                 </div>
-                            )}
-
+                              )}
                             <button type="submit" className="w-full mt-2 bg-cyan-600 hover:bg-cyan-500 text-white py-3 rounded-xl font-medium transition-colors shadow-lg shadow-cyan-900/20">
                                 Encrypt & Save
                             </button>
@@ -661,7 +673,65 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             {/* Recovery Setup Modal */}
             {
                 isRecoveryModalOpen && (
-                    <RecoverySetup onClose={() => setIsRecoveryModalOpen(false)} />
+                    <RecoverySetup onClose={() => {
+                        setIsRecoveryModalOpen(false);
+                        loadProfile();
+                    }} />
+                )
+            }
+
+            {/* Recovery Details Modal */}
+            {
+                isRecoveryDetailsOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                        <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                            <div className="p-6">
+                                <div className="flex items-center justify-between mb-6">
+                                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        Recovery Status
+                                    </h3>
+                                    <button
+                                        onClick={() => setIsRecoveryDetailsOpen(false)}
+                                        className="text-zinc-400 hover:text-white transition-colors"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                        <span className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider">Status</span>
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                            ✓ Active & Valid
+                                        </span>
+                                    </div>
+                                    <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                        <span className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider">Configured On</span>
+                                        <span className="text-zinc-200 text-sm font-medium">
+                                            {recoveryConfiguredAt ? new Date(recoveryConfiguredAt).toLocaleString(undefined, { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : "Legacy Configured (Date N/A)"}
+                                        </span>
+                                    </div>
+                                    <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                                        <p className="text-zinc-400 text-xs leading-relaxed">
+                                            Recovery keys are single-use emergency credentials and remain valid until they are used. Using the key to reset your password consumes it, requiring you to generate a new key afterward.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end mt-6">
+                                    <button
+                                        onClick={() => setIsRecoveryDetailsOpen(false)}
+                                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-xl text-sm font-medium transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )
             }
 

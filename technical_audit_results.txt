@@ -1,0 +1,632 @@
+TECHNICAL AUDIT REPORT — ZERO-KNOWLEDGE PASSWORD MANAGER
+Date of Audit: June 23, 2026
+
+================================================================================
+EXECUTIVE SUMMARY
+================================================================================
+Overall Score: 6.5 / 10
+Status: NOT PRODUCTION-READY
+
+While the Zero-Knowledge client-side cryptography, Next.js route migration, and
+TypeScript build integration are solid and build cleanly, the system is not 
+ready for production due to two critical issues:
+1. Unsalted/Lookup-Direct Account Recovery (Database Leak Threat)
+2. Infinite Rate-Limiter Map Growth (DoS Memory Leak)
+
+Addressing these security and stability blockers will elevate the application
+to a production-grade standard.
+
+================================================================================
+CRITICAL ISSUES
+================================================================================
+1. Unsalted/Lookup-Direct Account Recovery (Database Leak Threat)
+   - Risk: High
+   - Description: The client hashes the recovery key using HKDF (producing
+     recoveryKeyHash) and sends it to the server. The server stores this exact
+     hash string directly as a database column in plaintext. During recovery,
+     the server queries the database by matches of this hash. If the database
+     is compromised, an attacker obtains all recoveryKeyHash values. Since the
+     endpoints /api/auth/recovery/init and /api/auth/recovery/reset authenticate
+     solely by finding these values, anyone with access to the database dump
+     can immediately recover any account and reset its master password.
+   - Suggestion: The server must hash the client-supplied recoveryKeyHash (e.g.,
+     using SHA-256 or bcrypt) before storing it, and apply the same hash
+     function to incoming request payloads before querying or validating.
+
+2. Infinite Rate-Limiter Map Growth (DoS Memory Leak)
+   - Risk: High
+   - Description: The local rate limiter uses a global in-memory Map store
+     (const store = new Map<string, RateLimitEntry>();) that grows indefinitely.
+     While expired items have their counters reset upon subsequent requests from
+     the same key, keys are never evicted or deleted from the Map once added.
+     An attacker performing a distributed attack using many distinct IP
+     addresses can inflate this map indefinitely, consuming memory until the
+     Node process crashes with an Out of Memory (OOM) error.
+   - Suggestion: Introduce a cleanup interval to prune expired entries, use an
+     LRU eviction policy cache, or migrate rate limiting to a Redis/Upstash
+     implementation suited for serverless.
+
+================================================================================
+MEDIUM ISSUES
+================================================================================
+1. No .env.example Documentation
+   - Risk: Medium
+   - Description: The project lacks a .env.example template to instruct
+     developers and deployment environments on what environment variables
+     (like DATABASE_URL and JWT_SECRET) must be set.
+   - Suggestion: Add a root .env.example template.
+
+2. 2FA Persistence after Recovery
+   - Risk: Medium
+   - Description: If a user resets their credentials using the recovery key,
+     their twoFactorSecret remains active. If they lost their 2FA device, they
+     are still locked out. If this is intentional, it must be documented;
+     otherwise, it is a user lockout vector.
+   - Suggestion: Explicitly decide if recovery should disable 2FA. If 2FA is
+     preserved, warn the user during setup. If not, reset twoFactorSecret to
+     null during recovery resets.
+
+================================================================================
+MINOR IMPROVEMENTS
+================================================================================
+1. Loose 'any' Types
+   - Risk: Low
+   - Description: TypeScript uses 'any' for decoded token objects and some
+     state items in components, weakening type safety.
+   - Suggestion: Define explicit interfaces and remove any.
+
+2. Check-Then-Mutate Database Queries
+   - Risk: Low
+   - Description: Vault update and delete queries check if an item exists first,
+     then update/delete by ID.
+   - Suggestion: Use a single update/delete statement with composite conditions:
+     prisma.vault.update({ where: { id, userId }, data }) to avoid race conditions.
+
+3. Workspace Cleanup
+   - Risk: Low
+   - Description: The unused apps/api workspace folder is still in the codebase.
+   - Suggestion: Delete the unused apps/api folder completely.
+
+================================================================================
+DETAILED AUDIT CHECKLIST
+================================================================================
+
+--------------------------------------------------------------------------------
+ARCHITECTURE
+--------------------------------------------------------------------------------
+[PASS] Verify the app uses Next.js Route Handlers exclusively.
+  - Why: All API requests are handled by route handlers located under
+    apps/web/src/app/api.
+  - Files: apps/web/src/app/api/
+  - Risks: None.
+
+[PASS] Ensure Express is no longer used in the request path.
+  - Why: The Next.js client directs relative /api calls directly to the Route
+    Handlers. The Express API (apps/api) is not in the active request path.
+  - Files: apps/web/src/lib/api.ts
+  - Risks: None.
+
+[PASS] Verify next.config.js contains no proxy rewrites.
+  - Why: The proxy rewrite mapping to port 4000 has been removed.
+  - Files: apps/web/next.config.js
+  - Risks: None.
+
+[PASS] Confirm frontend and API are same-origin.
+  - Why: Next.js serves both the React application assets and the API Route
+    Handlers on the same port/origin.
+  - Files: apps/web/src/lib/api.ts
+  - Risks: None.
+
+[PASS] Ensure no CORS configuration is required.
+  - Why: Same-origin browser requests do not trigger CORS preflight checks or
+    require specialized CORS configuration on the server.
+  - Files: apps/web/src/app/api/
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+BUILD & TYPES
+--------------------------------------------------------------------------------
+[PASS] npm run build succeeds.
+  - Why: Next.js production builds complete successfully, creating static and
+    dynamic server routes.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] npx tsc --noEmit succeeds.
+  - Why: The TypeScript compiler type-checks the entire workspace cleanly.
+  - Files: apps/web/tsconfig.json
+  - Risks: None.
+
+[PASS] No TypeScript errors.
+  - Why: Compiler diagnostics report zero errors.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] No unresolved imports.
+  - Why: All internal paths and aliased @/* imports are resolved properly.
+  - Files: N/A
+  - Risks: None.
+
+[WARNING] No usage of any that should be strongly typed.
+  - Why: Several functions, type assertions, and component states utilize
+    any rather than strong types.
+  - Files:
+    * packages/crypto/src/token.ts#L13 (verifyToken returns any)
+    * apps/web/src/components/vault-dashboard.tsx#L10 (state uses any[])
+    * apps/web/src/lib/services/auth.service.ts#L31 (user is typed as any)
+  - Risks: Loss of type safety may hide bugs or cause runtime crashes if
+    unexpected formats are returned.
+  - Fix: Define explicit interfaces and replace any.
+
+[PASS] No circular dependencies.
+  - Why: No circular module dependency paths were identified.
+  - Files: N/A
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+ENVIRONMENT VARIABLES
+--------------------------------------------------------------------------------
+[PASS] JWT_SECRET is mandatory.
+  - Why: If JWT_SECRET is missing, the crypto package throws an initialization
+    error.
+  - Files: packages/crypto/src/token.ts#L3-L6
+  - Risks: None.
+
+[PASS] No fallback secret exists.
+  - Why: The default fallback secret string has been completely removed.
+  - Files: packages/crypto/src/token.ts#L3-L6
+  - Risks: None.
+
+[PASS] DATABASE_URL comes from environment variables.
+  - Why: Prisma loads database variables directly from the host environment.
+  - Files: packages/database/prisma/schema.prisma#L7
+  - Risks: None.
+
+[PASS] No secrets are hardcoded.
+  - Why: Verified through directory scanning that no API secrets or JWT
+    credentials are saved in files.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] No .env files are committed.
+  - Why: Environment configurations are ignored in the repository rules.
+  - Files: .gitignore
+  - Risks: None.
+
+[FAIL] .env.example exists.
+  - Why: There is no .env.example file present in the repository.
+  - Files: Root directory
+  - Risks: Developers or deployment setups lack visible configurations of
+    required parameters, which can stall integration tasks.
+  - Fix: Create a .env.example template.
+
+--------------------------------------------------------------------------------
+AUTHENTICATION
+--------------------------------------------------------------------------------
+[PASS] JWT tokens are signed securely.
+  - Why: JWT access and refresh tokens are signed with HMAC-SHA256 using
+    the system JWT_SECRET.
+  - Files: packages/crypto/src/token.ts
+  - Risks: None.
+
+[PASS] JWT verification checks expiration.
+  - Why: Verification uses jwt.verify which checks token expiration claims
+    automatically.
+  - Files: packages/crypto/src/token.ts#L13-L19
+  - Risks: None.
+
+[PASS] Cookies are HttpOnly.
+  - Why: Saved using httpOnly: true in response cookies to restrict
+    accessibility from client-side scripts.
+  - Files:
+    * apps/web/src/app/api/auth/login/route.ts#L30
+    * apps/web/src/app/api/auth/verify-2fa/route.ts#L38
+  - Risks: None.
+
+[WARNING] Cookies use SameSite=Strict.
+  - Why: SameSite is configured dynamically as sameSite: IS_PROD ? "strict" : "lax".
+    It is set to Lax in development to ease testing.
+  - Files:
+    * apps/web/src/app/api/auth/login/route.ts#L32
+    * apps/web/src/app/api/auth/verify-2fa/route.ts#L40
+  - Risks: If environment configurations are incorrectly evaluated, cookies might
+    remain Lax in production, rendering the app vulnerable to CSRF.
+  - Fix: Always use "strict" for SameSite.
+
+[PASS] Cookies are Secure in production.
+  - Why: Conditioned on production flags (secure: IS_PROD).
+  - Files:
+    * apps/web/src/app/api/auth/login/route.ts#L31
+    * apps/web/src/app/api/auth/verify-2fa/route.ts#L39
+  - Risks: None.
+
+[PASS] Protected routes require authentication.
+  - Why: Handlers inspect incoming cookies using getAuthUser and exit with
+    a 401 response if authentication yields null.
+  - Files: apps/web/src/app/api/vault/route.ts#L9
+  - Risks: None.
+
+[PASS] Invalid JWT returns 401.
+  - Why: Unauthenticated states yield response payloads with status code 401.
+  - Files: apps/web/src/app/api/vault/route.ts#L10
+  - Risks: None.
+
+[PASS] No route bypasses requireAuth().
+  - Why: Verified all API endpoints managing user-specific resources check
+    for session context.
+  - Files: apps/web/src/app/api/
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+PASSWORD SECURITY
+--------------------------------------------------------------------------------
+[PASS] Passwords use Argon2id.
+  - Why: Password hashes are created using argon2.argon2id.
+  - Files: packages/crypto/src/password.ts#L22
+  - Risks: None.
+
+[PASS] Unique salts are generated automatically.
+  - Why: The Argon2 hashing library handles the generation of unique salts.
+  - Files: packages/crypto/src/password.ts#L21-L43
+  - Risks: None.
+
+[PASS] Password verification uses Argon2 verify.
+  - Why: Verification evaluates passwords against stored hashes using
+    argon2.verify.
+  - Files: packages/crypto/src/password.ts#L46-L48
+  - Risks: None.
+
+[PASS] Plaintext passwords are never stored.
+  - Why: The database stores only the resulting hash output string.
+  - Files: packages/database/prisma/schema.prisma#L14
+  - Risks: None.
+
+[PASS] Password hashes contain embedded salts.
+  - Why: Standard Argon2 format hashes are returned, containing key parameters
+    and salt within the same output.
+  - Files: packages/crypto/src/password.ts#L36-L43
+  - Risks: None.
+
+[PASS] No fallback hashing mechanisms exist.
+  - Why: The codebase contains no secondary hashing schemes.
+  - Files: packages/crypto/src/password.ts
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+ZERO-KNOWLEDGE PROPERTIES
+--------------------------------------------------------------------------------
+[PASS] Vault data is encrypted client-side.
+  - Why: Vault data encryption occurs before network transport using
+    SubtleCrypto in the browser.
+  - Files: apps/web/src/utils/encryption.utils.ts#L131
+  - Risks: None.
+
+[PASS] Server never receives plaintext vault contents.
+  - Why: Next.js route handlers receive only the encrypted blob,
+    initialization vector, and authentication tag.
+  - Files: apps/web/src/app/api/vault/route.ts#L34
+  - Risks: None.
+
+[PASS] Server never receives plaintext VEK.
+  - Why: Plaintext VEK is kept in-memory as a CryptoKey object; the server
+    receives only the wrapped version (encrypted client-side via KEK derived
+    from password).
+  - Files: apps/web/src/utils/encryption.utils.ts#L216
+  - Risks: None.
+
+[PASS] Encrypted VEK is stored instead.
+  - Why: Database stores only the wrapped/encrypted bytes.
+  - Files: packages/database/prisma/schema.prisma#L19-L21
+  - Risks: None.
+
+[PASS] AES-GCM is used correctly.
+  - Why: Key length is 256 bits, IV is generated securely with 12-byte width,
+    and authentication tags are verified during decryption.
+  - Files: packages/crypto/src/client.ts#L111-L152
+  - Risks: None.
+
+[PASS] Random IVs are generated.
+  - Why: Generated on each encryption using window.crypto.getRandomValues.
+  - Files: packages/crypto/src/client.ts#L113
+  - Risks: None.
+
+[WARNING] IV reuse cannot occur.
+  - Why: IV is 12 bytes randomly generated, collision is extremely unlikely.
+    However, there is no stateful unique sequence counter (like a message
+    counter) to enforce IV non-repetition.
+  - Files: packages/crypto/src/client.ts#L113
+  - Risks: Negligible risk under normal conditions, but random collisions are
+    theoretically possible if a single key encrypts trillions of inputs.
+  - Fix: Document GCM key usage limits (practically unnecessary here).
+
+[PASS] Encryption keys are never logged.
+  - Why: Key material is handled strictly as non-extractable CryptoKey reference
+    handles in browser scopes.
+  - Files: apps/web/src/utils/encryption.utils.ts
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+RECOVERY FLOW
+--------------------------------------------------------------------------------
+[PASS] Recovery keys are randomly generated.
+  - Why: Hex key representation is derived using 32 random bytes from window CSRNG.
+  - Files: apps/web/src/utils/encryption.utils.ts#L15-L23
+  - Risks: None.
+
+[FAIL] Recovery keys are hashed before storage.
+  - Why: The server stores the client-provided recoveryKeyHash directly in
+    the database in plaintext. If the database leaks, an attacker obtains
+    all recoveryKeyHash values and can bypass password authentication by resetting
+    passwords directly.
+  - Files:
+    * apps/web/src/lib/services/auth.service.ts#L140-L191
+    * apps/web/src/app/api/auth/recovery/init/route.ts
+  - Risks: High Risk. Database disclosure allows attackers to recover any user's
+    account and reset their master password.
+  - Fix: Hash the recoveryKeyHash value server-side before database storage and
+    before lookup matching.
+
+[PASS] Plaintext recovery keys are never stored.
+  - Why: Only client-derived tokens are written to DB paths; the master seed hex
+    stays client side.
+  - Files: apps/web/src/utils/encryption.utils.ts#L25
+  - Risks: None.
+
+[FAIL] Recovery verification is secure.
+  - Why: Verification relies entirely on finding the plaintext-equivalent
+    recoveryKeyHash in database records.
+  - Files: apps/web/src/lib/services/auth.service.ts#L153-L175
+  - Risks: High Risk. (Same database leakage vulnerability as above).
+  - Fix: Perform secure server-side hashing on all recovery lookup parameters.
+
+[PASS / WARNING] Recovery reset invalidates previous credentials.
+  - Why: Replacing the master password updates user hashes and client keys, but
+    does not clear twoFactorSecret properties.
+  - Files: apps/web/src/lib/services/auth.service.ts#L178-L190
+  - Risks: If a user loses their 2FA device, recovery resets still lock them out
+    upon logging in.
+  - Fix: Explicitly reset twoFactorSecret to null during recovery resets if 2FA
+    should be disabled during account recovery.
+
+--------------------------------------------------------------------------------
+2FA
+--------------------------------------------------------------------------------
+[PASS] TOTP secrets are generated securely.
+  - Why: Uses authenticator.generateSecret() which wraps cryptographically
+    secure random bytes.
+  - Files: apps/web/src/lib/services/auth.service.ts#L101-L105
+  - Risks: None.
+
+[PASS] OTP verification uses otplib.
+  - Why: Implements authenticator.check to evaluate OTP validity.
+  - Files: apps/web/src/lib/services/auth.service.ts#L114
+  - Risks: None.
+
+[PASS] Invalid codes fail correctly.
+  - Why: Service throws validation errors when input code verification fails.
+  - Files: apps/web/src/lib/services/auth.service.ts#L115
+  - Risks: None.
+
+[PASS] Login requires OTP when enabled.
+  - Why: When a 2FA secret exists, login routes pause session creation and
+    return a require2fa flag.
+  - Files: apps/web/src/app/api/auth/login/route.ts#L17-L23
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+PRISMA & DATABASE
+--------------------------------------------------------------------------------
+[PASS] Prisma singleton exists.
+  - Why: Configured inside Next.js to use standard global assignment preventing
+    multiple instantiations.
+  - Files: apps/web/src/lib/prisma.ts
+  - Risks: None.
+
+[PASS] Database connections are reused.
+  - Why: Reuses the singleton instance across serverless execution contexts.
+  - Files: apps/web/src/lib/prisma.ts
+  - Risks: None.
+
+[PASS] No PrismaClient instances are created repeatedly.
+  - Why: Verified that all new API service modules reference the singleton
+    wrapper client.
+  - Files: apps/web/src/lib/prisma.ts
+  - Risks: None.
+
+[PASS] Queries are parameterized.
+  - Why: Handled by Prisma Client's core queries.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] No raw SQL injection vulnerabilities.
+  - Why: No raw database queries ($queryRaw) exist in code.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Cascade deletes are configured correctly.
+  - Why: Prisma schema defines onDelete: Cascade rules mapping vault
+    relationships.
+  - Files: packages/database/prisma/schema.prisma#L41
+  - Risks: None.
+
+[PASS] User isolation is enforced.
+  - Why: Data queries target records using filtering clauses tied to the
+    authenticated userId.
+  - Files: apps/web/src/lib/services/vault.service.ts
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+VAULT ACCESS CONTROL
+--------------------------------------------------------------------------------
+[PASS] Users cannot access another user's vault entries.
+  - Why: All queries for reading, updating, or deleting check the session user
+    ID matches database ownership fields.
+  - Files: apps/web/src/lib/services/vault.service.ts#L16
+  - Risks: None.
+
+[PASS] Every query filters by userId.
+  - Why: Query paths include the session context owner constraints.
+  - Files: apps/web/src/lib/services/vault.service.ts
+  - Risks: None.
+
+[PASS] ID enumeration is impossible.
+  - Why: Vault IDs are randomized UUIDs, preventing chronological discovery.
+  - Files: packages/database/prisma/schema.prisma#L39
+  - Risks: None.
+
+[PASS] Unauthorized access returns 401 or 403.
+  - Why: Blocked by auth checkpoints returning status 401 or 404.
+  - Files: apps/web/src/app/api/vault/[id]/route.ts#L17
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+RATE LIMITING
+--------------------------------------------------------------------------------
+[PASS] Login endpoint is rate limited.
+  - Why: Rates are parsed and evaluated prior to processing login requests.
+  - Files: apps/web/src/app/api/auth/login/route.ts#L10
+  - Risks: None.
+
+[PASS] 2FA endpoint is rate limited.
+  - Why: Evaluates OTP verification attempts under the IP limiter rules.
+  - Files: apps/web/src/app/api/auth/verify-2fa/route.ts#L10
+  - Risks: None.
+
+[PASS] Recovery endpoint is rate limited.
+  - Why: Limits are configured on recovery initialization and reset points.
+  - Files:
+    * apps/web/src/app/api/auth/recovery/init/route.ts#L7
+    * apps/web/src/app/api/auth/recovery/reset/route.ts#L9
+  - Risks: None.
+
+[PASS] Rate limit returns 429.
+  - Why: Exceeded rate budgets trigger a HTTP status response of 429.
+  - Files: apps/web/src/lib/rate-limit.ts#L46
+  - Risks: None.
+
+[FAIL] Memory leaks are not possible.
+  - Why: The local rate limiter uses a global Map store that grows indefinitely.
+    Keys are never evicted or deleted from the Map once added. An attacker
+    can inflate this map indefinitely using distributed IP addresses, causing
+    an Out of Memory (OOM) error.
+  - Files: apps/web/src/lib/rate-limit.ts
+  - Risks: High Risk. Denial of Service (DoS) vulnerability via memory exhaustion.
+  - Fix: Introduce a cleanup interval or use an LRU eviction policy cache.
+
+--------------------------------------------------------------------------------
+API ROUTES
+--------------------------------------------------------------------------------
+[WARNING] All routes validate request bodies.
+  - Why: Input parameters are parsed and validated manually. However, there is
+    no formal schema parser (like Zod or Joi) validating types, which can make
+    endpoints vulnerable to type mismatch exceptions on invalid requests.
+  - Files: apps/web/src/app/api/
+  - Risks: Parameter pollution or runtime script exceptions on bad inputs.
+  - Fix: Adopt validation schema libraries like zod.
+
+[PASS] Proper status codes are returned.
+  - Why: Returns appropriate success and error status codes.
+  - Files: apps/web/src/app/api/
+  - Risks: None.
+
+[PASS] Errors do not leak stack traces.
+  - Why: Catch blocks map and return description strings without dumping trace
+    telemetry.
+  - Files: apps/web/src/app/api/
+  - Risks: None.
+
+[PASS] No sensitive information is returned.
+  - Why: Database result structures are explicitly mapped to exclude private
+    properties like passwordHash or twoFactorSecret.
+  - Files: apps/web/src/lib/services/auth.service.ts#L62-L73
+  - Risks: None.
+
+[PASS] JSON responses are consistent.
+  - Why: Response payloads follow standard JSON object architectures.
+  - Files: N/A
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+LOGGING
+--------------------------------------------------------------------------------
+[PASS] Passwords are never logged.
+  - Why: Password inputs are never piped into stdout/logger utilities.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Tokens are never logged.
+  - Why: Authorization payload structures are excluded from logger traces.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Encryption keys are never logged.
+  - Why: Secret components exist purely as non-serializable memory representations.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Recovery keys are never logged.
+  - Why: Verified that recovery keys are excluded from trace telemetry.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Console logs do not expose secrets.
+  - Why: No secret details are piped to logger configurations.
+  - Files: N/A
+  - Risks: None.
+
+--------------------------------------------------------------------------------
+DEPENDENCIES
+--------------------------------------------------------------------------------
+[WARNING] No unused dependencies exist.
+  - Why: The original Express backend code is still present under apps/api in the
+    workspace; its dependencies are installed but remain unused.
+  - Files: apps/api/package.json
+  - Risks: Workspace package size bloating.
+  - Fix: Delete the unused apps/api workspace folder completely.
+
+[PASS] No deprecated crypto libraries are used.
+  - Why: Uses standard/modern tools like Web Crypto API, argon2, jsonwebtoken,
+    and otplib.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Package versions are reasonable.
+  - Why: Modern dependencies.
+  - Files: apps/web/package.json
+  - Risks: None.
+
+[WARNING] Native dependencies are Vercel compatible.
+  - Why: Uses native argon2 modules, which require compilation during installation
+    via node-gyp. This can occasionally fail on serverless host operating systems.
+  - Files: packages/crypto/package.json
+  - Risks: Build compilation or runtime linkage issues on Vercel's host environment.
+  - Fix: Swap argon2 for @node-rs/argon2 (prebuilt platform-independent binaries).
+
+--------------------------------------------------------------------------------
+PRODUCTION READINESS
+--------------------------------------------------------------------------------
+[PASS] npm run build succeeds.
+  - Why: Next.js builds compile successfully.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Project is deployable on Vercel.
+  - Why: The app uses Next.js Route Handlers, bypassing Express hosting requirements.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Route handlers run in Node.js runtime.
+  - Why: Standard serverless execution target supports native binary components.
+  - Files: N/A
+  - Risks: None.
+
+[PASS] Prisma client can locate query engine.
+  - Why: Custom generate output path ensures correct packaging with bundle traces.
+  - Files: packages/database/prisma/schema.prisma#L3
+  - Risks: None.
+
+[FAIL] Environment variables are documented.
+  - Why: Missing .env.example file.
+  - Files: Root directory
+  - Risks: Blocked deployments on build pipelines.
+  - Fix: Provide a .env.example template.

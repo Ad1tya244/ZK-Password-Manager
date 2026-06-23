@@ -58,3 +58,9 @@ Thumbs.db
 
 # Brain/Artifacts (Agent)
 .gemini
+
+# Prisma custom output generated directory
+packages/database/src/generated/
+
+# TypeScript build info cache
+*.tsbuildinfo
