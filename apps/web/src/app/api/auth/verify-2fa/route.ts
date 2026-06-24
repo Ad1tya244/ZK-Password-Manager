@@ -4,12 +4,14 @@ import { Verify2faSchema } from "@zk/shared";
 import { validateBody } from "@/lib/validation";
 import * as authService from "@/lib/services/auth.service";
 import { rateLimitResponse } from "@/lib/rate-limit";
+import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
 export async function POST(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "unknown";
-    const limited = rateLimitResponse(`verify2fa:${ip}`);
+    const limited = await rateLimitResponse(`verify2fa:${ip}`);
     if (limited) return limited;
 
     const parsed = await validateBody(request, Verify2faSchema);
@@ -27,6 +29,16 @@ export async function POST(request: NextRequest) {
 
         const accessToken = generateToken({ userId: user.id, username: user.username });
         const refreshToken = generateRefreshToken({ userId: user.id });
+
+        // Persist session to database
+        const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+        await prisma.session.create({
+            data: {
+                userId: user.id,
+                tokenHash,
+                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+            },
+        });
 
         const res = NextResponse.json({
             user: {

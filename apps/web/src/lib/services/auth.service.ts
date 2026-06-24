@@ -35,6 +35,7 @@ export interface LoginUserResponse {
         vaultSalt: string | null;
         hasRecovery: boolean;
         recoveryConfiguredAt: Date | null;
+        is2faEnabled: boolean;
     };
     require2fa?: boolean;
 }
@@ -83,6 +84,7 @@ export const loginUser = async (
             vaultSalt: user.vaultSalt,
             hasRecovery: !!user.recoveryKeyHash,
             recoveryConfiguredAt: user.recoveryConfiguredAt,
+            is2faEnabled: !!user.twoFactorSecret,
         },
         require2fa: !!user.twoFactorSecret,
     };
@@ -123,7 +125,12 @@ export const verifyTwoFactorToken = async (username: string, token: string, secr
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user) throw new Error("User not found");
 
-    const secretToVerify = secret ?? user.twoFactorSecret;
+    // Prevent overriding/bypassing existing 2FA configuration
+    if (user.twoFactorSecret && secret) {
+        throw new Error("2FA is already configured for this user");
+    }
+
+    const secretToVerify = user.twoFactorSecret ?? secret;
     if (!secretToVerify) throw new Error("2FA not enabled for this user");
 
     const isValid = authenticator.check(token, secretToVerify);
@@ -223,12 +230,23 @@ export const recoverAccount = async (
     newEncryptedVEK: Buffer,
     newVekIV: Buffer,
     newVekAuthTag: Buffer,
-    newVaultSalt: string
+    newVaultSalt: string,
+    twoFactorSecret: string,
+    totpToken: string
 ) => {
     const user = await findUserByRecoveryKeyHash(recoveryKeyHash);
     if (!user) throw new Error("Invalid Recovery Key");
 
+    // Verify TOTP token against the new secret
+    const isTotpValid = authenticator.check(totpToken, twoFactorSecret);
+    if (!isTotpValid) throw new Error("Invalid TOTP code");
+
     const { hash, salt } = await hashPassword(newPassword);
+
+    // Revoke all sessions belonging to the user on recovery
+    await prisma.session.deleteMany({
+        where: { userId: user.id },
+    });
 
     return await prisma.user.update({
         where: { id: user.id },
@@ -241,7 +259,7 @@ export const recoverAccount = async (
             vekAuthTag: newVekAuthTag,
             failedLoginAttempts: 0,
             lockoutUntil: null,
-            twoFactorSecret: null, // Clear/Disable 2FA on recovery override
+            twoFactorSecret, // Set the new 2FA secret
             // Consume and clear the recovery key
             recoveryKeyHash: null,
             recoveryEncryptedVEK: null,

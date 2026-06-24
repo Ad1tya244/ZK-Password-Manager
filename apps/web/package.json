@@ -8,20 +8,22 @@
         "lint": "next lint"
     },
     "dependencies": {
+        "@otplib/preset-default": "^12.0.1",
+        "@upstash/ratelimit": "^2.0.8",
+        "@upstash/redis": "^1.38.0",
         "@zk/crypto": "*",
         "@zk/database": "*",
         "@zk/shared": "*",
-        "@otplib/preset-default": "^12.0.1",
-        "qrcode": "^1.5.4",
         "axios": "^1.13.2",
-        "next": "14.1.0",
+        "next": "14.2.35",
+        "qrcode": "^1.5.4",
         "react": "^18",
         "react-dom": "^18"
     },
     "devDependencies": {
         "@types/axios": "^0.9.36",
-        "@types/qrcode": "^1.5.6",
         "@types/node": "^20",
+        "@types/qrcode": "^1.5.6",
         "@types/react": "^18",
         "@types/react-dom": "^18",
         "autoprefixer": "^10.0.1",

@@ -1,6 +1,6 @@
 # Zero-Knowledge Password Manager
 
-A Zero-Knowledge, security-first password manager implementing client-side AES-GCM encryption, local PBKDF2 key derivation, Argon2id server-side password hashing, time-based OTP two-factor authentication, and Zod request verification.
+A Zero-Knowledge, security-first password manager implementing client-side AES-GCM encryption, local PBKDF2 key derivation, Argon2id server-side password hashing, time-based OTP two-factor authentication, database-backed persistent sessions, and distributed rate limiting.
 
 ---
 
@@ -34,11 +34,20 @@ The core architectural requirement is that **the server is untrusted**. Plaintex
 * **Vault Encryption Key (VEK)**: A random 256-bit AES key (VEK) is generated locally on registration. All vault entries are encrypted on the client device using **AES-GCM (256-bit)**.
 * **Key Wrapping (KEK)**: The VEK is wrapped (encrypted) on the client side using the **Key Encryption Key (KEK)** derived from the master password. This allows the user to change their master password (which re-wraps the VEK) without having to re-encrypt every single item in their vault.
 
-### 3. Emergency Single-Use Recovery Key
-* **Entropy**: A high-entropy 256-bit emergency recovery key is generated client-side during configuration.
-* **Database Leak Protection**: The recovery key hash is derived via client-side HKDF and hashed server-side using SHA-256 before storage. Attackers with database access cannot recover the raw recovery key.
-* **Single-Use Invariant**: The recovery key is consumed and invalidated immediately upon a password reset. A user can configure at most one active recovery key.
-* **2FA Lockout Prevention**: Performing account recovery resets the user's 2FA configurations (`twoFactorSecret = null`). Since the holder of the recovery key already has complete cryptographic control of the vault data (via `recoveryEncryptedVEK`), requiring 2FA adds no additional cryptographic protection but presents a high risk of user lockout if both the password and the 2FA device are lost.
+### 3. Persistent Session Management
+* **Database-Backed Sessions**: Added a Prisma `Session` model. Access tokens are hashed using SHA-256 before being stored in the database.
+* **Dual Verification**: Authed requests verify both the JWT signature and that a matching active session hash exists in the database.
+* **Session Revocations**: Logout revokes the current session. Added a "Logout All Devices" endpoint that deletes all sessions for the user. Session revocation is also triggered upon password recovery and account deletion (via cascade).
+
+### 4. Redesigned 3-Step Account Recovery Wizard
+* **Wizard Sequence**:
+  * **Step 1 (Verify Identity)**: Requests Username and 64-char Recovery Key. Validates recovery key hash using `/auth/recovery/init` and checks if the returned username matches user input. If correct, pre-generates the new 2FA secret and QR code via `/auth/enable-2fa`.
+  * **Step 2 (Set Password)**: Prompts user to input and confirm the new master password. Validates password strength and match. Decrypts the existing VEK using the recovery KEK, and re-wraps it with the new master password KEK.
+  * **Step 3 (Force 2FA)**: Displays the newly generated 2FA QR code and demands the 6-digit verification code.
+* **Transactional Backend Reset**:
+  * No database updates happen until the user successfully completes all steps, including mandatory 2FA configuration.
+  * The `/auth/recovery/reset` endpoint verifies both the recovery key and the new 2FA code in a single transaction. On success, it overwrites the old password, vault salt, wrapped VEK, and 2FA secret in the database, revokes all previous sessions, and logs the user in immediately.
+  * This prevents password-only logins after recovery and resolves user lockout risks safely.
 
 ---
 
@@ -99,41 +108,33 @@ The core architectural requirement is that **the server is untrusted**. Plaintex
 +------------------------------+              +--------------------------+
 ```
 
-### 3. Emergency Account Recovery Flow
+### 3. Redesigned 3-Step Account Recovery Flow
 ```
-                     +-------------------------+
-                     |  Plaintext Recovery Key | (256-bit emergency key)
-                     +------------+------------+
-                                  |
-                                  v
-                      +-----------+-----------+
-                      |   HKDF-SHA256 Deriver |
-                      +-----------+-----------+
-                                  |
-            +---------------------+---------------------+
-            | (Key derivation KEK)                      | (One-way client hash)
-            v                                           v
-+-----------+-----------+                   +-----------+-----------+
-|    Recovery KEK       |                   |   recoveryKeyHash     |
-+-----------+-----------+                   +-----------+-----------+
-            |                                           |
-            | Used to unwrap                            | Sent to Server
-            | recoveryEncryptedVEK                      v
-            |                               +-----------+-----------+
-            v                               |    SHA-256 Hasher     |
-+-----------+-----------+                   +-----------+-----------+
-| Decrypted VEK (Client)|                               |
-+-----------+-----------+                               v
-            |                               +-----------+-----------+
-            v                               | Stored recoveryKeyHash|
-[Encrypt VEK with new KEK]                  | (Matched in DB query) |
-            |                               +-----------+-----------+
-            v                                           |
-      Sent to Server                                    v
-+-----------+-----------+                   +-----------+-----------+
-| Save new password hash|                   | Clear twoFactorSecret |
-| and wrapped VEK in DB |                   | (Disable 2FA)         |
-+-----------------------+                   +-----------------------+
+Step 1: Identity Verification
+[Input Username & Key] ---> [Derive Recovery Key Hash] ---> POST /auth/recovery/init
+                                                                   |
+                                                         (Verify Key & Username)
+                                                                   v
+                                                         Generate & return new 2FA
+                                                         secret & QR code
+
+Step 2: Password Reset
+[Input New Password]   ---> [Decrypt VEK using Recovery KEK] ---> [Re-wrap VEK with new Master Password KEK]
+
+Step 3: Mandate 2FA Setup
+[Scan QR Code & Input TOTP] ---> POST /auth/recovery/reset
+                                       |
+                             (Verify Recovery Key & TOTP)
+                                       |
+                                       v
+                             [Prisma Update Transaction]
+                             - Update password hash, salt, wrapped VEK
+                             - Save new 2FA secret (deletes old 2FA)
+                             - Revoke all user DB sessions
+                                       |
+                                       v
+                             Generate new session & JWTs
+                             Set cookies -> Redirect to Vault
 ```
 
 ---
@@ -142,13 +143,13 @@ The core architectural requirement is that **the server is untrusted**. Plaintex
 
 ### Zod Request Schemas
 All state-changing request bodies are validated on arrival to block SQL/NoSQL injections, user enumerations, and malformed requests:
-* **Registration / Login**: Enforces strict minimum lengths and regex character constraints.
+* **Registration / Login**: Enforces strict minimum lengths, regex character constraints, and password confirmation validation.
 * **Base64 Payload Fields**: Encryption vectors (`IV`, `authTag`, and `wrappedVEK`) are verified using Base64 regular expressions before database entry.
 * **Parameters Validation**: Path parameters (like vault item UUIDs) are verified using a `z.string().uuid()` schema.
 
 ### Rate Limiting & Safety
-* **Limiter Configuration**: All core auth, 2FA, and recovery routes are rate-limited per IP (10 requests per 60 seconds).
-* **Memory Protection**: The rate limiter prunes expired IPs using a background interval loop. It limits maximum active entries to `10,000` to prevent memory exhaustion attacks.
+* **Upstash Distributed Rate Limiting**: Replaced in-memory Map rate limiting with `@upstash/redis` and `@upstash/ratelimit` SDKs. This ensures rate limits (10 requests per 60 seconds per IP) are tracked consistently across multiple serverless instances and survive restarts.
+* **Fail-Open Fallback**: Limiter fails open gracefully if the remote Redis calls time out or if credentials are unconfigured, logging warnings to ensure service availability.
 
 ---
 
@@ -166,14 +167,14 @@ Create a `.env.local` file inside `apps/web` (use the root `.env.example` as a t
 # apps/web/.env.local
 DATABASE_URL="mysql://root:password@127.0.0.1:3306/zk_password_manager"
 JWT_SECRET="your-super-secure-random-jwt-signing-key"
+UPSTASH_REDIS_REST_URL="https://your-upstash-redis-url.upstash.io"
+UPSTASH_REDIS_REST_TOKEN="your_upstash_redis_token"
 ```
 
 ### 3. Database Migration & ORM Client Generation
 Initialize your database connection and compile the Prisma client engine:
 ```bash
-cd packages/database
-npx prisma db push
-npx prisma generate
+DATABASE_URL="mysql://root:password@127.0.0.1:3306/zk_password_manager" ./packages/database/node_modules/.bin/prisma db push --schema=packages/database/prisma/schema.prisma
 ```
 
 ### 4. Running the Project

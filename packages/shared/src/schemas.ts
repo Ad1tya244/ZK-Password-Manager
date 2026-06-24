@@ -61,6 +61,8 @@ export const ResetRecoverySchema = z.object({
     newVekIV: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
     newVekAuthTag: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
     newVaultSalt: z.string().min(1, "Vault salt is required"),
+    twoFactorSecret: z.string().min(1, "New 2FA secret is required"),
+    totpToken: z.string().regex(SIX_DIGITS_REGEX, "2FA token must be exactly 6 digits"),
 });
 
 export const CreateVaultItemSchema = z.object({

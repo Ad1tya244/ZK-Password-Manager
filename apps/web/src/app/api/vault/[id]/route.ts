@@ -17,7 +17,7 @@ interface RouteParams {
 const IdSchema = z.string().uuid("Invalid item ID format");
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsedId = IdSchema.safeParse(params.id);
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsedId = IdSchema.safeParse(params.id);
@@ -78,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsedId = IdSchema.safeParse(params.id);

@@ -8,7 +8,7 @@ const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 const toBase64 = (buffer: Buffer) => buffer.toString("base64");
 
 export async function GET(request: NextRequest) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     try {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsed = await validateBody(request, CreateVaultItemSchema);

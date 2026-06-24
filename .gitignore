@@ -18,6 +18,9 @@ dist/
 debug-user.ts
 reset-db.ts
 test-recovery.ts
+reproduction_save_vault.ts
+technical_audit_results.txt
+
 
 # Misc
 .DS_Store
@@ -64,3 +67,7 @@ packages/database/src/generated/
 
 # TypeScript build info cache
 *.tsbuildinfo
+
+#checklist
+final_checklist.md
+

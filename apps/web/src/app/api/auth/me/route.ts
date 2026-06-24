@@ -3,7 +3,7 @@ import { getAuthUser } from "@/lib/server-auth";
 import * as authService from "@/lib/services/auth.service";
 
 export async function GET(request: NextRequest) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return Response.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     try {

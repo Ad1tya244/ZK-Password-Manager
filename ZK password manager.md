@@ -15,7 +15,7 @@ To achieve both absolute security and user flexibility, the application separate
 *   **Vault Encryption Key (VEK):** A random 256-bit symmetric key generated client-side during registration. This key encrypts all vault items using AES-GCM.
 *   **Key Wrapping:** The VEK is encrypted (wrapped) with the KEK and stored in the database. When the user changes their password, they decrypt the VEK using the old KEK and re-wrap it under a new KEK derived from the new password. This avoids re-encrypting the actual vault items, which remain encrypted under the unchanged VEK.
 *   **Zero-Knowledge Recovery:** A 256-bit high-entropy Recovery Key (64-character hex string) allows the user to derive a Recovery KEK via HKDF-SHA256. This Recovery KEK wraps a copy of the VEK on setup. During recovery, the Recovery KEK decrypts the VEK, allowing the user to set a new master password and re-wrap the VEK under a new master KEK without the server ever seeing the keys.
-*   **2FA Overriding during Recovery:** Performing account recovery resets the user's 2FA configurations (`twoFactorSecret = null`). Since the holder of the recovery key already has complete cryptographic control of the vault data (via `recoveryEncryptedVEK`), requiring 2FA adds no additional cryptographic protection but presents a high risk of user lockout if both the password and the 2FA device are lost.
+*   **Mandatory 2FA Setup during Recovery:** Performing account recovery requires setting up a brand new 2FA configuration in Step 3 of the recovery process. The user is forced to scan a new QR code and input a valid TOTP token to complete the recovery. Only upon successful verification are the database updates applied transactionally (the old 2FA secret is deleted, the new one is stored, and the new wrapped VEK/password are saved), preventing password-only logins after recovery and ensuring account security.
 
 ---
 
@@ -35,14 +35,18 @@ A recovery system using a client-side generated 256-bit recovery key. Through HK
 *   A **Recovery KEK** used to encrypt the VEK.
 *   A **Recovery Identity Hash** (`recoveryKeyHash`) sent to the server as a lookup identifier. The server only knows the hash and never sees the recovery key or Recovery KEK.
 *   The recovery key configuration time is persisted as `recoveryConfiguredAt` in the user's metadata table.
+*   The recovery process follows a 3-step wizard forcing identity verification, new master password creation (including client-side confirmation validation), and mandatory new 2FA setup prior to db execution.
 
 ### 5. Multi-Factor Authentication (2FA)
-Supports RFC 6238 Time-based One-Time Passwords (TOTP). During setup, a QR code is generated via `qrcode` and scanned using apps like Google Authenticator. Verification is performed using the `otplib` package inside co-located Next.js Route Handlers before issuing session tokens.
+Supports RFC 6238 Time-based One-Time Passwords (TOTP). During setup (both on the dashboard settings and during the mandatory 3-step account recovery wizard), a QR code is generated via `qrcode` and scanned using authenticator apps like Google Authenticator. Verification is performed using the `otplib` package inside co-located Next.js Route Handlers.
 
-### 6. Double Verification, Input Validation, and Rate Limiting
+### 6. Persistent Session Management
+Uses a database-backed session validation mechanism. Upon successful login or recovery, a new session is recorded in the `Session` table using a SHA-256 hash of the JWT token. All authenticated requests verify both the JWT signature and the existence of the matching session token hash in the database. Individual logouts delete the current session, and a "Logout All Devices" feature deletes all active sessions for the user. Session revocation is also triggered upon password recovery and account deletion (via cascade).
+
+### 7. Input Validation and Distributed Rate Limiting
+*   **Input Validation:** All server API route handlers validate incoming JSON bodies against strict Zod schemas. During registration and vault creation, a second password field is used for master password confirmation, validated on the client side in real-time.
+*   **Distributed Rate Limiting:** Rate limiting on auth, 2FA, and recovery routes uses `@upstash/redis` and `@upstash/ratelimit` SDKs instead of in-memory maps. This keeps IP-based rate limits (10 requests per 60 seconds) synchronized across serverless environments. If the Redis backend is unavailable or unconfigured, the limiter fails open gracefully to ensure system availability.
 *   **Double Verification:** Critical endpoints like Account Deletion require double verification: both the Master Password and the TOTP token must be validated.
-*   **Input Validation:** All server API route handlers validate incoming JSON bodies against strict Zod schemas to prevent injection attacks and malformed requests.
-*   **Rate Limiting:** Authentication, 2FA verification, and recovery routes are rate-limited per IP (10 requests per 60 seconds). Limiter records prune old entries dynamically and limit active database size to `10,000` to prevent memory DoS attacks.
 *   **Account Lockout:** The server implements a 10-minute database-enforced account lockout after 5 failed login attempts.
 
 ---
@@ -92,7 +96,7 @@ The project is structured as a monorepo managed by **TurboRepo**.
 |  +---------------------------------------------------------------------------------------------+  |
 |  | API Routing: /api/auth/* & /api/vault/*                                                     |  |
 |  | - Enforces Zod Schema Validation on incoming JSON request payloads                          |  |
-|  | - Performs IP-based Rate Limiting (in-memory with cleanup iteration)                        |  |
+|  | - Performs IP-based Distributed Rate Limiting (via Upstash Redis with fail-open fallback)    |  |
 |  +----------------------------------------------+----------------------------------------------+  |
 |                                                 |
 |                                                 v
@@ -100,9 +104,9 @@ The project is structured as a monorepo managed by **TurboRepo**.
 |  | Services Layer (src/lib/services/auth.service.ts & src/lib/services/vault.service.ts)       |  |
 |  |                                                                                             |  |
 |  |   +--------------------------------------+       +---------------------------------------+  |  |
-|  |   |           Server Cryptography        |       |          Token Generation             |  |  |
-|  |   |   - Argon2id Password Hashing        |       |   - JWT Access Token (15m expiration) |  |  |
-|  |   |   - DatabaseLockout Verification     |       |   - JWT Refresh Token (7d expiration) |  |  |
+|  |   |           Server Cryptography        |       |    Persistent Session Management      |  |  |
+|  |   |   - Argon2id Password Hashing        |       |   - Validate JWT & DB Session Hash    |  |  |
+|  |   |   - DatabaseLockout Verification     |       |   - Individual / All Devices Revoke   |  |  |
 |  |   +--------------------------------------+       +---------------------------------------+  |  |
 |  +----------------------------------------------+----------------------------------------------+  |
 +-------------------------------------------------|-------------------------------------------------+
@@ -112,18 +116,23 @@ The project is structured as a monorepo managed by **TurboRepo**.
 +---------------------------------------------------------------------------------------------------+
 |                                       PERSISTENCE LAYER (MySQL)                                   |
 |                                                                                                   |
-|  +-------------------------------------------------+   +---------------------------------------+  |
-|  |                  "users" Table                  |   |             "vault" Table             |  |
-|  |  - id (UUID, Primary Key)                       |   |  - id (UUID, Primary Key)             |  |
-|  |  - username (Unique string)                     |   |  - userId (Foreign Key, Cascade)      |  |
-|  |  - passwordHash & salt (Argon2 values)          |   |  - encryptedBlob (AES-GCM ciphertext)  |  |
-|  |  - vaultSalt (KEK derivation salt)              |   |  - iv (Initialization Vector bytes)   |  |
-|  |  - encryptedVEK, vekIV, vekAuthTag (Wrapped Key)|   |  - authTag (AES-GCM Authentication)   |  |
-|  |  - recoveryKeyHash (HKDF Hash for lookup)       |   |  - createdAt & updatedAt               |  |
-|  |  - recoveryEncryptedVEK, iv, tag (Recovery wrap) |   |                                       |  |
-|  |  - recoveryConfiguredAt (Setup timestamp)       |   |                                       |  |
-|  |  - failedLoginAttempts & lockoutUntil           |   |                                       |  |
-|  +-------------------------------------------------+   +---------------------------------------+  |
+|  +---------------------------------------------+   +-------------------------------------------+  |
+|  |                "users" Table                |   |               "vault" Table               |  |
+|  |  - id (UUID, Primary Key)                   |   |  - id (UUID, Primary Key)                 |  |
+|  |  - username (Unique string)                 |   |  - userId (Foreign Key, Cascade)          |  |
+|  |  - passwordHash & salt (Argon2 values)      |   |  - encryptedBlob (AES-GCM ciphertext)     |  |
+|  |  - vaultSalt (KEK derivation salt)          |   |  - iv (Initialization Vector bytes)       |  |
+|  |  - encryptedVEK, vekIV, vekAuthTag (Wrapped)|   |  - authTag (AES-GCM Authentication)      |  |
+|  |  - recoveryKeyHash (HKDF Hash lookup)       |   |  - createdAt & updatedAt                  |  |
+|  |  - recoveryEncryptedVEK, iv, tag (Rec-wrap) |   +-------------------------------------------+  |
+|  |  - recoveryConfiguredAt (Setup timestamp)   |                                                  |
+|  |  - failedLoginAttempts & lockoutUntil       |   +-------------------------------------------+  |
+|  +----------------------+----------------------+   |             "sessions" Table              |  |
+|                         |                          |  - id (UUID, Primary Key)                 |  |
+|                         | Has many                 |  - userId (Foreign Key, Cascade)          |  |
+|                         v                          |  - tokenHash (SHA-256 of JWT)             |  |
+|                  (Sessions Relation)               |  - createdAt & expiresAt                  |  |
+|                         +------------------------->+-------------------------------------------+  |
 +---------------------------------------------------------------------------------------------------+
 ```
 
@@ -132,7 +141,8 @@ The project is structured as a monorepo managed by **TurboRepo**.
     *   [AuthForm](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/components/auth-form.tsx): Manages registration, login, 2FA, and ZK account recovery.
     *   [VaultDashboard](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/components/vault-dashboard.tsx): Manages items, settings, recovery status, and password tools.
     *   [validation.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/lib/validation.ts): Helper for validating request bodies against schemas.
-    *   [auth.service.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/lib/services/auth.service.ts): Implements database user management, lockout constraints, and 2FA resets.
+    *   [auth.service.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/lib/services/auth.service.ts): Implements database user management, lockout constraints, sessions, and recovery reset logic.
+    *   [rate-limit.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/lib/rate-limit.ts): Distributed rate limiting implementation using Upstash Redis.
     *   [vault.service.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/apps/web/src/lib/services/vault.service.ts): Handles database query execution for user vault items.
 *   **`packages/crypto`:**
     *   [client.ts](file:///Users/adityadivakar/Documents/Projects/zk-password-manager/packages/crypto/src/client.ts): Client-side Web Crypto API wrappers for PBKDF2, AES-GCM, and encoding utilities.
@@ -212,7 +222,7 @@ sequenceDiagram
     API-->>Browser: Return saved record (with auto-generated ID)
 ```
 
-#### Zero-Knowledge Account Recovery Flow
+#### Zero-Knowledge 3-Step Account Recovery Flow
 ```mermaid
 sequenceDiagram
     autonumber
@@ -221,19 +231,34 @@ sequenceDiagram
     participant API as Next.js API
     participant DB as MySQL DB
 
-    User->>Browser: Inputs 64-character Recovery Key & New Password
+    Note over User, DB: Step 1: Identity Verification
+    User->>Browser: Inputs Username & 64-character Recovery Key
     Browser->>Browser: HKDF derive Recovery KEK & recoveryKeyHash from Recovery Key
     Browser->>API: POST /api/auth/recovery/init (recoveryKeyHash)
     API->>DB: Lookup User by recoveryKeyHash
-    API-->>Browser: Return recovery wrapped VEK (recoveryEncryptedVEK, iv, tag)
+    API-->>Browser: Return username & recovery wrapped VEK (recoveryEncryptedVEK, iv, tag)
+    Browser->>Browser: Verify returned username matches input username
+    Browser->>API: POST /api/auth/enable-2fa (username)
+    API-->>Browser: Generate & return new 2FA secret and QR code
+
+    Note over User, DB: Step 2: Password Reset
+    User->>Browser: Inputs New Password & Confirm Password (validated matching)
     Browser->>Browser: Decrypt recovery VEK using Recovery KEK -> Raw VEK bytes
     Browser->>Browser: Generate a new random vaultSalt
     Browser->>Browser: PBKDF2 derive new KEK from New Password & new vaultSalt
     Browser->>Browser: Wrap Raw VEK with new KEK
-    Browser->>API: POST /api/auth/recovery/reset (recoveryKeyHash, newPassword, newWrappedVEK, newVaultSalt...)
+
+    Note over User, DB: Step 3: Mandatory 2FA Setup & Complete Reset
+    Browser->>User: Displays QR code, prompts for 2FA token
+    User->>Browser: Inputs 6-digit TOTP token
+    Browser->>API: POST /api/auth/recovery/reset (recoveryKeyHash, newPassword, newEncryptedVEK, newVekIV, newVekAuthTag, newVaultSalt, twoFactorSecret, totpToken)
+    API->>API: Verify TOTP token against twoFactorSecret using otplib
     API->>API: Hash newPassword (Argon2id)
-    API->>DB: Update User record (new passwordHash, new vaultSalt, new encryptedVEK, clear 2FA & lockout)
-    API-->>Browser: Return recovery success (Requires login)
+    API->>DB: Transactional Database Update:
+    Note over DB: - Revoke all user DB sessions<br/>- Save new password hash & salt<br/>- Save new wrapped VEK & vaultSalt<br/>- Store new 2FA secret (deletes old 2FA)<br/>- Clear recovery key fields and reset lockout status
+    API->>DB: Record new session in Session table
+    API-->>Browser: Return new session token & log user in
+    Browser->>User: Redirects to Vault Dashboard
 ```
 
 ---
@@ -273,7 +298,15 @@ combined.set(tag, ciphertext.length);
 
 ### 3. Server-Blind Account Recovery
 *   **Challenge:** If a user loses their master password, resetting it requires a recovery mechanism. Traditional mechanisms involve server-side resets, violating the zero-knowledge threat model.
-*   **Solution:** Developed an HKDF-based recovery process. When the user sets up recovery, the client generates a 256-bit key. Using HKDF, it derives a Recovery KEK and an Identity Hash. The client encrypts the VEK with the Recovery KEK and uploads it along with the Identity Hash. During recovery, the recovery key recreates the Recovery KEK and the Identity Hash on the client, fetches the recovery-wrapped VEK, decrypts it, and re-wraps it with a KEK derived from the new master password.
+*   **Solution:** Developed an HKDF-based recovery process. When the user sets up recovery, the client generates a 256-bit key. Using HKDF, it derives a Recovery KEK and an Identity Hash. The client encrypts the VEK with the Recovery KEK and uploads it along with the Identity Hash. During recovery, the recovery key recreates the Recovery KEK and the Identity Hash on the client, fetches the recovery-wrapped VEK, decrypts it, and re-wraps it with a KEK derived from a new master password.
+
+### 4. Persistent Session Revocations & DB Sync
+*   **Challenge:** JWT tokens are stateless, meaning once issued they cannot be easily revoked prior to their expiration. If a user logs out, recovers their account, or deletes their account, any active JWTs remained valid, violating the security model.
+*   **Solution:** Implemented a database-backed persistent `Session` table. A SHA-256 hash of every active token is stored in the database. During route middleware authentication, the handler checks both the JWT signature and queries the DB to verify the hash matches an active session. Logouts, account recovery, and account deletions cascade delete the session entries, rendering old JWTs instantly useless.
+
+### 5. Distributed Fail-Open Rate Limiting
+*   **Challenge:** Traditional in-memory rate-limit structures do not scale horizontally across serverless environments. Replacing them with a central distributed Redis instance (Upstash) ensures state sharing but introduces a single point of failure: if Upstash becomes unreachable, users must not be locked out of their accounts.
+*   **Solution:** Implemented error boundaries and timeouts on all `@upstash/redis` API invocations. If a Redis lookup fails or times out, the middleware catches the exception, logs a warning, and "fails open"—allowing valid authentications to proceed uninterrupted.
 
 ---
 
@@ -355,7 +388,7 @@ Using a dual-key system decouples vault item encryption from the master password
 The vault items are encrypted using **AES-GCM (Galois/Counter Mode) 256-bit**. AES-GCM is an authenticated encryption algorithm that provides both confidentiality and data integrity. It prevents attackers from modifying the ciphertext (tampering) because any modification invalidates the 16-byte authentication tag, causing decryption to fail.
 
 ### 5. How does the account recovery system work without compromising ZK principles?
-During setup, the client generates a 256-bit recovery key. Using HKDF-SHA256, it derives a Recovery KEK and a recovery lookup hash. The client encrypts the VEK with the Recovery KEK and uploads it along with the lookup hash. If the master password is lost, the recovery key derives the Recovery KEK, retrieves the recovery-wrapped VEK, decrypts it, and re-wraps it with a KEK derived from a new password.
+Account recovery uses a 3-step wizard. First, identity is verified using the username and the client-derived recovery key hash. Next, the client decrypts the recovery-wrapped VEK using the derived Recovery KEK and re-wraps it under a new KEK derived from a new master password. Finally, the user must set up a new mandatory 2FA secret. All database updates—including resetting the master password, updating the wrapped VEK, saving the new 2FA secret, and revoking all prior sessions—are processed on the server in a single database transaction only after the new 2FA TOTP code is successfully verified.
 
 ### 6. Where are the encryption keys stored on the client, and how are they secured against extraction?
 Keys are held in memory as non-extractable `CryptoKey` objects inside a singleton `EncryptionService`. When a key is marked as non-extractable (`extractable: false`), the browser's SubtleCrypto engine prevents scripts from exporting the raw key bytes, mitigating the risk of key extraction via XSS or browser extension sniffing.
@@ -365,30 +398,22 @@ Keys are held in memory as non-extractable `CryptoKey` objects inside a singleto
 *   **Argon2id (Server-Side):** Used for password hashing on the backend. It is the modern standard for password hashing, designed to resist GPU-based cracking attacks.
 
 ### 8. What metadata is stored in the database for each user?
-The database stores:
-*   `id` (UUID)
-*   `username` (Unique string)
-*   `passwordHash` (Argon2id hash)
-*   `salt` (Argon2 password salt)
-*   `vaultSalt` (Salt used for KEK derivation)
-*   `twoFactorSecret` (TOTP secret key, if enabled)
-*   `failedLoginAttempts` & `lockoutUntil` (Lockout metrics)
-*   Wrapped VEK fields (`encryptedVEK`, `vekIV`, `vekAuthTag`)
-*   Wrapped Recovery VEK fields (`recoveryKeyHash`, `recoveryEncryptedVEK`, `recoveryVekIV`, `recoveryVekAuthTag`)
-*   `recoveryConfiguredAt` (Setup timestamp of the recovery key)
+The database stores user profiles, their encrypted keys, recovery information, and active sessions:
+*   **User model fields:** `id` (UUID), `username`, `passwordHash`, `salt` (Argon2 password salt), `vaultSalt` (salt used for KEK derivation), `twoFactorSecret` (TOTP secret key), `failedLoginAttempts`, `lockoutUntil` (lockout metrics), wrapped VEK fields (`encryptedVEK`, `vekIV`, `vekAuthTag`), recovery fields (`recoveryKeyHash`, `recoveryEncryptedVEK`, `recoveryVekIV`, `recoveryVekAuthTag`), and `recoveryConfiguredAt`.
+*   **Session model fields:** Active database-backed persistent sessions associated with each user: `id` (UUID), `userId` (cascade-deleted relation to User), `tokenHash` (SHA-256 hash of the session token), `createdAt`, and `expiresAt`.
 
 ### 9. Why are the ciphertext and the authentication tag split into separate database fields?
 The Web Crypto API's `encrypt` function outputs a single buffer containing the ciphertext with the 16-byte authentication tag appended. To optimize database storage, the client slices the last 16 bytes off the buffer as the `authTag`, storing the preceding bytes as the `encryptedBlob`. During decryption, the client recombines these buffers.
 
 ### 10. How is multi-factor authentication (2FA) enforced in the application?
-The application implements TOTP (RFC 6238). During setup, the server generates a secret key and a QR code. When the user logs in, the server verifies the 6-digit code using `otplib` before setting the session cookies.
+The application implements TOTP (RFC 6238). During setup (both on the settings screen and during the 3-step account recovery wizard), the server generates a secret key and a QR code. When the user logs in (or completes recovery), the server verifies the 6-digit code using `otplib` before granting/reserving access.
 
 ### 11. Can a compromised API server decrypt a user's vault items?
 No. The API server only has access to the database containing the encrypted vault items and the encrypted VEK. The key required to decrypt the VEK (the KEK) is derived from the user's master password, which is never stored on the server.
 
 ### 12. How does the application protect against online brute-force attacks?
 To prevent brute-force attacks:
-*   IP-based rate-limiting restricts clients to 10 requests per minute on authentication routes.
+*   Distributed rate-limiting using `@upstash/redis` and `@upstash/ratelimit` restricts clients to 10 requests per minute per IP on authentication routes (login, registration, 2FA, and recovery).
 *   The database tracks failed attempts. On the 5th failed attempt, the account is locked for 10 minutes.
 
 ### 13. What is the role of `vaultSalt` in the User model?
@@ -398,13 +423,13 @@ The `vaultSalt` is a cryptographically secure random value generated during regi
 Storing the lockout status (`lockoutUntil` and `failedLoginAttempts`) in the MySQL database ensures that the lockout persists across server restarts and is enforced consistently across multi-server horizontal configurations.
 
 ### 15. How are session tokens managed?
-Upon successful login, the server issues a stateless JWT access token (valid for 15 minutes) and a refresh token (valid for 7 days). These tokens are stored in HttpOnly, Secure, SameSite=Strict cookies, protecting them from XSS and CSRF attacks.
+Upon successful login or recovery, the server issues a JWT access token (valid for 15 minutes) and stores a SHA-256 hash of the token in the `Session` database table. These tokens are transmitted to the client in HttpOnly, Secure, SameSite=Strict cookies. For all authenticated actions, the server validates the JWT signature and verifies that the session hash remains active in the database. This allows instant, granular session revocation on logout, "Logout All Devices" triggers, and password resets.
 
 ### 16. What is the performance impact of client-side key derivation?
 Deriving a KEK using PBKDF2 with 100,000 iterations takes approximately 120ms to 180ms on standard client devices. This delay is imperceptible to users during login but provides a significant barrier against online brute-force cracking attempts.
 
 ### 17. How does the delete account feature ensure data is safely removed?
-When a user deletes their account, the client requests validation by prompting for both the master password and a 2FA code (if enabled). Upon verification, the server executes a cascading database delete, removing the user's record and all associated encrypted vault items.
+When a user deletes their account, the client requests validation by prompting for both the master password and a 2FA code (if enabled). Upon verification, the server executes a cascading database delete, removing the user's record (which cascades to delete all associated sessions) and all encrypted vault items.
 
 ### 18. What happens if a user loses both their master password and their recovery key?
 Because this is a zero-knowledge system, there is no way for the server administrators to recover or decrypt the user's data. If both the master password and the recovery key are lost, the vault contents are permanently unrecoverable.
@@ -413,7 +438,7 @@ Because this is a zero-knowledge system, there is no way for the server administ
 TurboRepo provides a monorepo structure that allows sharing the `@zk/crypto` library, `@zk/database` package, and `@zk/shared` schemas between the Next.js frontend pages and Route Handlers. It optimizes build and lint pipelines by caching output artifacts.
 
 ### 20. What security measures are taken to secure the API Route Handlers against unauthorized access?
-The API secures all protected endpoints using cookie token extraction. The handler intercepts requests, extracts the JWT access token from the cookies, and validates its signature. If the token is missing or invalid, the request is rejected with a 401 status code.
+The API secures all protected endpoints using cookie token extraction. The handler intercepts requests, extracts the JWT access token from the cookies, and validates its signature. If the token is missing, invalid, or the session hash has been revoked from the database, the request is rejected with a 401 status code.
 
 ---
 
@@ -424,5 +449,5 @@ The API secures all protected endpoints using cookie token extraction. The handl
 *   **Duration:** 4 Weeks (Intense development, migration, and security hardening)
 *   **Team Size:** 1 (Solo Developer & Security Engineer)
 *   **My Role:** Full-Stack Developer & Security Engineer
-*   **Tech Stack:** Next.js 14, React 18, TypeScript, Prisma ORM, MySQL, Web Crypto API, Argon2id, JWT, OTPLib, Zod, TurboRepo
-*   **Key Features:** Zero-Knowledge Key Wrapping Architecture, Client-Side AES-GCM 256-bit Encryption, ZK Account Recovery via HKDF-SHA256, RFC 6238 TOTP Multi-factor Authentication, Argon2id Password Hashing, Server-Side Zod Schemas Verification, API Rate Limiting, and Account Lockouts.
+*   **Tech Stack:** Next.js 14, React 18, TypeScript, Prisma ORM, MySQL, Web Crypto API, Argon2id, JWT, Upstash Redis, OTPLib, Zod, TurboRepo
+*   **Key Features:** Zero-Knowledge Key Wrapping Architecture, Client-Side AES-GCM 256-bit Encryption, ZK 3-Step Account Recovery Wizard, Mandatory 2FA Verification, DB-Backed Persistent Session Management (Individual/Global Revocation), Argon2id Hashing, Server-Side Zod Schemas Verification, Upstash Distributed Rate Limiting, and Account Lockouts.

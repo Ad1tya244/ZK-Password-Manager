@@ -7,7 +7,7 @@ import * as authService from "@/lib/services/auth.service";
 const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 
 export async function POST(request: NextRequest) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsed = await validateBody(request, SaveVekSchema);

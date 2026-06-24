@@ -6,7 +6,7 @@ import { rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "unknown";
-    const limited = rateLimitResponse(`recovery-init:${ip}`);
+    const limited = await rateLimitResponse(`recovery-init:${ip}`);
     if (limited) return limited;
 
     const parsed = await validateBody(request, InitRecoverySchema);

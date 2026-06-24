@@ -5,7 +5,7 @@ import { validateBody } from "@/lib/validation";
 import * as authService from "@/lib/services/auth.service";
 
 export async function DELETE(request: NextRequest) {
-    const authUser = getAuthUser(request);
+    const authUser = await getAuthUser(request);
     if (!authUser) return NextResponse.json({ error: "Access denied. No token provided." }, { status: 401 });
 
     const parsed = await validateBody(request, DeleteAccountSchema);
