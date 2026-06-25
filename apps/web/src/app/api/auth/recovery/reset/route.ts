@@ -6,6 +6,7 @@ import { rateLimitResponse } from "@/lib/rate-limit";
 import { generateToken, generateRefreshToken } from "@zk/crypto";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { parseUserAgent } from "@/utils/user-agent";
 
 const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -47,11 +48,14 @@ export async function POST(request: NextRequest) {
 
         // Save session in database
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+        const userAgentRaw = request.headers.get("user-agent");
+        const deviceInfo = parseUserAgent(userAgentRaw);
         await prisma.session.create({
             data: {
                 userId: user.id,
                 tokenHash,
                 expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+                deviceInfo,
             },
         });
 

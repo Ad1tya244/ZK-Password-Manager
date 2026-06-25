@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
                 hasRecovery: !!user.recoveryKeyHash,
                 is2faEnabled: !!user.twoFactorSecret,
                 recoveryConfiguredAt: user.recoveryConfiguredAt,
+                createdAt: user.createdAt,
             },
         });
     } catch {

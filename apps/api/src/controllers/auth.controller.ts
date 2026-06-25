@@ -1,6 +1,10 @@
 import { Request, Response } from "express";
 import * as authService from "../services/auth.service";
+import crypto from "crypto";
+import { PrismaClient } from "@zk/database";
+import { parseUserAgent } from "../utils/user-agent";
 
+const prismaDb = new PrismaClient();
 const IS_PROD = process.env.NODE_ENV === "production";
 
 // Helper to handle Buffer conversion
@@ -41,9 +45,39 @@ export const login = async (req: Request, res: Response) => {
             });
         }
 
+        // Revoke any existing active session for this device
+        const oldToken = req.cookies.accessToken;
+        if (oldToken) {
+            const oldTokenHash = crypto.createHash("sha256").update(oldToken).digest("hex");
+            await prismaDb.session.deleteMany({
+                where: { tokenHash: oldTokenHash },
+            }).catch(() => {});
+        }
+
+        // Clean up expired sessions for this user
+        await prismaDb.session.deleteMany({
+            where: {
+                userId: user.id,
+                expiresAt: { lt: new Date() },
+            },
+        }).catch(() => {});
+
         // If 2FA not enabled, login directly
         const accessToken = generateToken({ userId: user.id, username: user.username });
         const refreshToken = generateRefreshToken({ userId: user.id });
+
+        // Save session in database
+        const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+        const userAgentRaw = req.headers["user-agent"];
+        const deviceInfo = parseUserAgent(userAgentRaw);
+        await prismaDb.session.create({
+            data: {
+                userId: user.id,
+                tokenHash,
+                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+                deviceInfo,
+            },
+        });
 
         // Return same cookies
         res.cookie("refreshToken", refreshToken, {
@@ -92,8 +126,38 @@ export const verify2fa = async (req: Request, res: Response) => {
             await authService.enableTwoFactor(username, secret);
         }
 
+        // Revoke any existing active session for this device
+        const oldToken = req.cookies.accessToken;
+        if (oldToken) {
+            const oldTokenHash = crypto.createHash("sha256").update(oldToken).digest("hex");
+            await prismaDb.session.deleteMany({
+                where: { tokenHash: oldTokenHash },
+            }).catch(() => {});
+        }
+
+        // Clean up expired sessions for this user
+        await prismaDb.session.deleteMany({
+            where: {
+                userId: user.id,
+                expiresAt: { lt: new Date() },
+            },
+        }).catch(() => {});
+
         const accessToken = generateToken({ userId: user.id, username: user.username });
         const refreshToken = generateRefreshToken({ userId: user.id });
+
+        // Save session in database
+        const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+        const userAgentRaw = req.headers["user-agent"];
+        const deviceInfo = parseUserAgent(userAgentRaw);
+        await prismaDb.session.create({
+            data: {
+                userId: user.id,
+                tokenHash,
+                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+                deviceInfo,
+            },
+        });
 
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
@@ -125,10 +189,38 @@ export const verify2fa = async (req: Request, res: Response) => {
     }
 };
 
-export const logout = (req: Request, res: Response) => {
+export const logout = async (req: Request, res: Response) => {
+    try {
+        const token = req.cookies.accessToken;
+        if (token) {
+            const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+            await prismaDb.session.deleteMany({
+                where: { tokenHash }
+            }).catch(() => {});
+        }
+    } catch (error: any) {
+        console.error("Session revocation failed during Express logout:", error);
+    }
     res.clearCookie("refreshToken");
     res.clearCookie("accessToken");
     return res.json({ message: "Logged out" });
+};
+
+export const logoutAll = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        if (userId) {
+            await prismaDb.session.deleteMany({
+                where: { userId }
+            });
+        }
+        res.clearCookie("refreshToken");
+        res.clearCookie("accessToken");
+        return res.json({ message: "Logged out from all devices" });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message || "Failed to logout all devices" });
+    }
 };
 
 export const me = async (req: Request, res: Response) => {
@@ -143,7 +235,8 @@ export const me = async (req: Request, res: Response) => {
                 id: user.id,
                 username: user.username,
                 hasRecovery: !!user.recoveryKeyHash,
-                is2faEnabled: !!user.twoFactorSecret
+                is2faEnabled: !!user.twoFactorSecret,
+                createdAt: user.createdAt
             }
         });
     } catch (e) {
@@ -288,5 +381,127 @@ export const recoverAccount = async (req: Request, res: Response) => {
         return res.json({ message: "Account recovered successfully. Please log in with your new password." });
     } catch (error: any) {
         return res.status(400).json({ error: error.message });
+    }
+};
+
+
+
+export const changeUsername = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        const { newUsername } = req.body;
+        if (!newUsername) return res.status(400).json({ error: "New username required" });
+        if (!/^[a-zA-Z0-9]+$/.test(newUsername)) return res.status(400).json({ error: "Username must contain only letters and numbers" });
+
+        const user = await authService.changeUsername(userId, newUsername);
+
+        const accessToken = generateToken({ userId: user.id, username: user.username });
+        const refreshToken = generateRefreshToken({ userId: user.id });
+
+        res.cookie("refreshToken", refreshToken, {
+            httpOnly: true,
+            secure: IS_PROD,
+            sameSite: IS_PROD ? "strict" : "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        res.cookie("accessToken", accessToken, {
+            httpOnly: true,
+            secure: IS_PROD,
+            sameSite: IS_PROD ? "strict" : "lax",
+            maxAge: 15 * 60 * 1000,
+        });
+
+        return res.json({ message: "Username updated successfully", username: user.username });
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+    }
+};
+
+export const changePassword = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        const { currentPassword, newPassword, encryptedVEK, vekIV, vekAuthTag, newVaultSalt } = req.body;
+
+        if (!currentPassword || !newPassword || !encryptedVEK || !vekIV || !vekAuthTag || !newVaultSalt) {
+            return res.status(400).json({ error: "Missing required fields" });
+        }
+
+        await authService.changeUserPassword(
+            userId,
+            currentPassword,
+            newPassword,
+            toBuffer(encryptedVEK),
+            toBuffer(vekIV),
+            toBuffer(vekAuthTag),
+            newVaultSalt
+        );
+
+        res.clearCookie("refreshToken");
+        res.clearCookie("accessToken");
+
+        return res.json({ message: "Master password changed successfully" });
+    } catch (error: any) {
+        return res.status(400).json({ error: error.message });
+    }
+};
+
+export const listSessions = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        const token = req.cookies?.accessToken;
+        const currentHash = token ? crypto.createHash("sha256").update(token).digest("hex") : null;
+
+        const sessions = await prismaDb.session.findMany({
+            where: { userId },
+            orderBy: { createdAt: "desc" }
+        });
+
+        return res.json({
+            sessions: sessions.map(s => ({
+                id: s.id,
+                createdAt: s.createdAt,
+                expiresAt: s.expiresAt,
+                isCurrent: s.tokenHash === currentHash,
+                deviceInfo: s.deviceInfo || "Unknown Device"
+            }))
+        });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
+    }
+};
+
+export const revokeSession = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.userId;
+        const { sessionId } = req.body;
+        if (!sessionId) return res.status(400).json({ error: "Session ID required" });
+
+        const session = await prismaDb.session.findFirst({
+            where: { id: sessionId, userId }
+        });
+
+        if (!session) return res.status(404).json({ error: "Session not found" });
+
+        const token = req.cookies?.accessToken;
+        const currentHash = token ? crypto.createHash("sha256").update(token).digest("hex") : null;
+        const isCurrent = session.tokenHash === currentHash;
+
+        await prismaDb.session.delete({
+            where: { id: sessionId }
+        });
+
+        if (isCurrent) {
+            res.clearCookie("refreshToken");
+            res.clearCookie("accessToken");
+        }
+
+        return res.json({ message: "Session revoked successfully" });
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
     }
 };

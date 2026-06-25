@@ -6,6 +6,7 @@ import * as authService from "@/lib/services/auth.service";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { parseUserAgent } from "@/utils/user-agent";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -39,16 +40,36 @@ export async function POST(request: NextRequest) {
             });
         }
 
+        // Revoke any existing active session for this device
+        const oldToken = request.cookies.get("accessToken")?.value;
+        if (oldToken) {
+            const oldTokenHash = crypto.createHash("sha256").update(oldToken).digest("hex");
+            await prisma.session.deleteMany({
+                where: { tokenHash: oldTokenHash },
+            }).catch(() => {});
+        }
+
+        // Clean up expired sessions for this user
+        await prisma.session.deleteMany({
+            where: {
+                userId: user.id,
+                expiresAt: { lt: new Date() },
+            },
+        }).catch(() => {});
+
         const accessToken = generateToken({ userId: user.id, username: user.username });
         const refreshToken = generateRefreshToken({ userId: user.id });
 
         // Persist session to database
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
+        const userAgentRaw = request.headers.get("user-agent");
+        const deviceInfo = parseUserAgent(userAgentRaw);
         await prisma.session.create({
             data: {
                 userId: user.id,
                 tokenHash,
                 expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+                deviceInfo,
             },
         });
 

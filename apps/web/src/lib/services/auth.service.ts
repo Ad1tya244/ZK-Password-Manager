@@ -195,10 +195,6 @@ export const setupRecovery = async (
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("User not found");
 
-    if (user.recoveryKeyHash) {
-        throw new Error("A recovery key already exists. Recovery keys are single-use and remain valid until used.");
-    }
-
     const hashed = hashServerRecoveryKey(recoveryKeyHash);
     return await prisma.user.update({
         where: { id: userId },
@@ -266,6 +262,41 @@ export const recoverAccount = async (
             recoveryVekIV: null,
             recoveryVekAuthTag: null,
             recoveryConfiguredAt: null,
+        },
+    });
+};
+
+export const changeUserPassword = async (
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    encryptedVEK: Buffer,
+    iv: Buffer,
+    authTag: Buffer,
+    newVaultSalt: string
+) => {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isValid) throw new Error("Incorrect current password");
+
+    const { hash, salt } = await hashPassword(newPassword);
+
+    // Revoke all active sessions on password change
+    await prisma.session.deleteMany({
+        where: { userId },
+    });
+
+    return await prisma.user.update({
+        where: { id: userId },
+        data: {
+            passwordHash: hash,
+            salt,
+            vaultSalt: newVaultSalt,
+            encryptedVEK,
+            vekIV: iv,
+            vekAuthTag: authTag,
         },
     });
 };

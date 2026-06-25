@@ -84,3 +84,29 @@ export const DecryptedVaultItemPayloadSchema = z.object({
     notes: z.string().optional(),
 });
 
+export const ChangeUsernameSchema = z.object({
+    newUsername: z.string()
+        .min(3, "Username must be at least 3 characters")
+        .max(50, "Username must be at most 50 characters")
+        .regex(/^[a-zA-Z0-9]+$/, "Username must contain only letters and numbers"),
+});
+
+export const ChangePasswordSchema = z.object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: z.string().min(10, "Password must be at least 10 characters")
+        .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+        .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
+    encryptedVEK: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
+    vekIV: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
+    vekAuthTag: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
+    newVaultSalt: z.string().min(1, "New vault salt is required"),
+});
+
+export const Reset2faSchema = z.object({
+    password: z.string().min(1, "Password is required"),
+});
+
+export const ClearRecoverySchema = z.object({
+    password: z.string().min(1, "Password is required"),
+});
+

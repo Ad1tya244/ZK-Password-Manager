@@ -579,7 +579,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 <button
                     type="submit"
                     disabled={loading || (!isLogin && !qrCode && password !== confirmRegisterPassword)}
-                    className="w-full bg-cyan-500 hover:bg-cyan-400 text-white font-bold py-2.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md mt-6"
+                    className="w-full bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md mt-6"
                 >
                     {loading ? (
                         <span className="flex items-center justify-center gap-2">

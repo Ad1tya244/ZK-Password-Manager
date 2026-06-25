@@ -224,6 +224,11 @@ export const recoverAccount = async (
 
     const { hash, salt } = await hashPassword(newPassword);
 
+    // Revoke all sessions belonging to the user on recovery
+    await prisma.session.deleteMany({
+        where: { userId: user.id },
+    });
+
     // Update password and re-wrapped VEK
     // Also reset lockout counters AND update vaultSalt
     return await prisma.user.update({
@@ -240,3 +245,48 @@ export const recoverAccount = async (
         }
     });
 };
+
+export const changeUserPassword = async (
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    encryptedVEK: Buffer,
+    iv: Buffer,
+    authTag: Buffer,
+    newVaultSalt: string
+) => {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("User not found");
+
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!isValid) throw new Error("Incorrect current password");
+
+    const { hash, salt } = await hashPassword(newPassword);
+
+    await prisma.session.deleteMany({
+        where: { userId }
+    });
+
+    return await prisma.user.update({
+        where: { id: userId },
+        data: {
+            passwordHash: hash,
+            salt,
+            vaultSalt: newVaultSalt,
+            encryptedVEK,
+            vekIV: iv,
+            vekAuthTag: authTag,
+        },
+    });
+};
+
+export const changeUsername = async (userId: string, newUsername: string) => {
+    const existing = await prisma.user.findUnique({ where: { username: newUsername } });
+    if (existing) throw new Error("Username already taken");
+
+    return await prisma.user.update({
+        where: { id: userId },
+        data: { username: newUsername }
+    });
+};
+

@@ -185,6 +185,25 @@ export const EncryptionService = {
         };
     },
 
+    changePassword: async (newPassword: string) => {
+        if (!session) throw new Error("Session not initialized");
+        const saltArray = window.crypto.getRandomValues(new Uint8Array(16));
+        const newVaultSalt = Array.from(saltArray).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const newKek = await deriveKey(newPassword, saltArray);
+        const wrapped = await wrapVEK(newKek, session.vek);
+
+        // Update the session KEK in memory
+        session.kek = newKek;
+
+        return {
+            encryptedVEK: wrapped.encryptedVEK,
+            vekIV: wrapped.iv,
+            vekAuthTag: wrapped.authTag,
+            newVaultSalt
+        };
+    },
+
     clearSession: () => { session = null; },
     hasSession: () => !!session,
 };

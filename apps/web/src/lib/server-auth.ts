@@ -33,8 +33,21 @@ export async function getAuthUser(request: NextRequest): Promise<AuthUser | null
 
     // Check if the session exists, belongs to the correct user, and has not expired
     if (!session || session.userId !== userId || session.expiresAt < new Date()) {
+        if (session && session.expiresAt < new Date()) {
+            await prisma.session.delete({
+                where: { tokenHash },
+            }).catch(() => {});
+        }
         return null;
     }
+
+    // Clean up all other expired sessions for this user to prevent database accumulation
+    await prisma.session.deleteMany({
+        where: {
+            userId,
+            expiresAt: { lt: new Date() }
+        }
+    }).catch(() => {});
 
     return { userId, username };
 }

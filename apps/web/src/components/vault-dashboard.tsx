@@ -118,6 +118,71 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [showPasswordDetail, setShowPasswordDetail] = useState(false);
     const [currentPage, setCurrentPage] = useState<"vault" | "account" | "settings">("vault");
 
+    const [createdAt, setCreatedAt] = useState<string>("");
+    // Username Change State
+    const [isEditingUsername, setIsEditingUsername] = useState(false);
+    const [newUsername, setNewUsername] = useState("");
+    const [usernameError, setUsernameError] = useState("");
+    const [usernameSuccess, setUsernameSuccess] = useState("");
+    // Password Change State
+    const [changePasswordStep, setChangePasswordStep] = useState<"idle" | "verify" | "re-wrap">("idle");
+    const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmNewPassword, setConfirmNewPassword] = useState("");
+    const [passwordError, setPasswordError] = useState("");
+    const [passwordSuccess, setPasswordSuccess] = useState("");
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+    // Active Sessions state
+    const [activeSessions, setActiveSessions] = useState<any[]>([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
+    const [sessionsError, setSessionsError] = useState("");
+
+    // 2FA Reconfiguration State
+    const [reconfigPassword, setReconfigPassword] = useState("");
+    const [reconfigPasswordError, setReconfigPasswordError] = useState("");
+    const [reconfigStep, setReconfigStep] = useState<"idle" | "password-verify" | "scan-qr" | "success">("idle");
+    const [reconfigQrUrl, setReconfigQrUrl] = useState("");
+    const [reconfigSecret, setReconfigSecret] = useState("");
+    const [reconfigTotp, setReconfigTotp] = useState("");
+    const [reconfigTotpError, setReconfigTotpError] = useState("");
+    const [isVerifyingReconfig, setIsVerifyingReconfig] = useState(false);
+
+    // Custom confirm and alert modal states
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        confirmText: string;
+        cancelText: string;
+        type: "danger" | "warning" | "info" | "recovery";
+        onConfirm: () => void | Promise<void>;
+    }>({
+        isOpen: false,
+        title: "",
+        message: "",
+        confirmText: "Confirm",
+        cancelText: "Cancel",
+        type: "info",
+        onConfirm: () => {}
+    });
+
+    const [alertModal, setAlertModal] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: "error" | "info" | "success";
+    }>({
+        isOpen: false,
+        title: "",
+        message: "",
+        type: "info"
+    });
+
     const loadItems = async () => {
         try {
             const res = await api.get<VaultItem[]>("/vault");
@@ -150,13 +215,208 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
     const loadProfile = async () => {
         try {
-            const res = await api.get<{ user: { username: string; hasRecovery: boolean; is2faEnabled: boolean; recoveryConfiguredAt: string | null } }>("/auth/me");
+            const res = await api.get<{ user: { username: string; hasRecovery: boolean; is2faEnabled: boolean; recoveryConfiguredAt: string | null; createdAt?: string } }>("/auth/me");
             setHasRecovery(res.data.user?.hasRecovery || false);
             setIs2faEnabled(res.data.user?.is2faEnabled || false);
             setRecoveryConfiguredAt(res.data.user?.recoveryConfiguredAt || null);
             setCurrentUser(res.data.user?.username || "");
+            setCreatedAt(res.data.user?.createdAt ? new Date(res.data.user.createdAt).toLocaleDateString("en-US", { year: 'numeric', month: 'long', day: 'numeric' }) : "");
         } catch (e) {
             console.error("Failed to load profile", e);
+        }
+    };
+
+    const handleUsernameChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setUsernameError("");
+        setUsernameSuccess("");
+        if (!newUsername.trim()) {
+            setUsernameError("Username cannot be empty");
+            return;
+        }
+        try {
+            const res = await api.post<{ username: string }>("/auth/change-username", { newUsername });
+            setCurrentUser(res.data.username);
+            setUsernameSuccess("Username updated successfully.");
+            setIsEditingUsername(false);
+        } catch (err: any) {
+            setUsernameError(err.response?.data?.error || "Failed to update username.");
+        }
+    };
+
+    const handleVerifyCurrentPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError("");
+        setPasswordSuccess("");
+        setIsVerifyingPassword(true);
+        try {
+            const res = await api.post<{ isValid: boolean }>("/auth/verify-password", { password: currentPassword });
+            if (res.data.isValid) {
+                setChangePasswordStep("re-wrap");
+            } else {
+                setPasswordError("Incorrect master password.");
+            }
+        } catch (err: any) {
+            setPasswordError(err.response?.data?.error || "Verification failed.");
+        } finally {
+            setIsVerifyingPassword(false);
+        }
+    };
+
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError("");
+        setPasswordSuccess("");
+        if (newPassword !== confirmNewPassword) {
+            setPasswordError("Passwords do not match.");
+            return;
+        }
+        if (newPassword.length < 10) {
+            setPasswordError("New password must be at least 10 characters.");
+            return;
+        }
+        setIsChangingPassword(true);
+        try {
+            // Cryptographic re-wrapping of VEK
+            const wrapResult = await EncryptionService.changePassword(newPassword);
+            
+            // Post payload to backend
+            await api.post("/auth/change-password", {
+                currentPassword,
+                newPassword,
+                encryptedVEK: wrapResult.encryptedVEK,
+                vekIV: wrapResult.vekIV,
+                vekAuthTag: wrapResult.vekAuthTag,
+                newVaultSalt: wrapResult.newVaultSalt
+            });
+
+            setPasswordSuccess("Password changed successfully! Logging out...");
+            setChangePasswordStep("idle");
+            
+            // Clear locally held session
+            EncryptionService.clearSession();
+
+            // Clear state and logout after 2 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } catch (err: any) {
+            setPasswordError(err.response?.data?.error || err.message || "Failed to change master password.");
+        } finally {
+            setIsChangingPassword(false);
+        }
+    };
+
+    const loadSessions = async () => {
+        setSessionsLoading(true);
+        setSessionsError("");
+        try {
+            const res = await api.get<{ sessions: any[] }>("/auth/sessions");
+            setActiveSessions(res.data.sessions || []);
+        } catch (e: any) {
+            setSessionsError(e.response?.data?.error || "Failed to load active sessions.");
+        } finally {
+            setSessionsLoading(false);
+        }
+    };
+
+    const handleSessionRevoke = (sessionId: string) => {
+        const sessionObj = activeSessions.find(s => s.id === sessionId);
+        const isCurrent = sessionObj?.isCurrent;
+        setConfirmModal({
+            isOpen: true,
+            title: isCurrent ? "Revoke Current Session" : "Revoke Session",
+            message: isCurrent 
+                ? "Are you sure you want to revoke your current session? This will immediately log you out of this device."
+                : `Are you sure you want to revoke this active session (${sessionObj?.deviceInfo || "Unknown Device"})? The associated device will be logged out immediately.`,
+            confirmText: "Revoke Session",
+            cancelText: "Cancel",
+            type: "danger",
+            onConfirm: async () => {
+                try {
+                    await api.post("/auth/sessions/revoke", { sessionId });
+                    if (isCurrent) {
+                        EncryptionService.clearSession();
+                        window.location.reload();
+                        return;
+                    }
+                    await loadSessions();
+                } catch (err: any) {
+                    setAlertModal({
+                        isOpen: true,
+                        title: "Failed to Revoke Session",
+                        message: err.response?.data?.error || "Failed to revoke session.",
+                        type: "error"
+                    });
+                }
+            }
+        });
+    };
+
+    const handleLogoutAll = () => {
+        setConfirmModal({
+            isOpen: true,
+            title: "Logout All Devices",
+            message: "Are you sure you want to log out from all devices? This will invalidate all active sessions worldwide, including this one.",
+            confirmText: "Logout All",
+            cancelText: "Cancel",
+            type: "danger",
+            onConfirm: async () => {
+                try {
+                    await api.post("/auth/logout-all");
+                    EncryptionService.clearSession();
+                    window.location.reload();
+                } catch (err: any) {
+                    setAlertModal({
+                        isOpen: true,
+                        title: "Failed to Logout All Devices",
+                        message: err.response?.data?.error || "Failed to log out from all devices.",
+                        type: "error"
+                    });
+                }
+            }
+        });
+    };
+
+    const handleReconfig2faInit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setReconfigPasswordError("");
+        try {
+            const res = await api.post<{ isValid: boolean }>("/auth/verify-password", { password: reconfigPassword });
+            if (res.data.isValid) {
+                // Generate secret and qr
+                const qrRes = await api.post<{ secret: string, qrCodeUrl: string }>("/auth/enable-2fa", { username: currentUser });
+                setReconfigSecret(qrRes.data.secret);
+                setReconfigQrUrl(qrRes.data.qrCodeUrl);
+                setReconfigStep("scan-qr");
+            } else {
+                setReconfigPasswordError("Incorrect master password.");
+            }
+        } catch (err: any) {
+            setReconfigPasswordError(err.response?.data?.error || "Verification failed.");
+        }
+    };
+
+    const handleReconfig2faVerify = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setReconfigTotpError("");
+        setIsVerifyingReconfig(true);
+        try {
+            await api.post("/auth/verify-2fa", {
+                username: currentUser,
+                token: reconfigTotp,
+                secret: reconfigSecret
+            });
+            setReconfigStep("success");
+            setReconfigPassword("");
+            setReconfigSecret("");
+            setReconfigQrUrl("");
+            setReconfigTotp("");
+            loadProfile();
+        } catch (err: any) {
+            setReconfigTotpError(err.response?.data?.error || "Verification failed.");
+        } finally {
+            setIsVerifyingReconfig(false);
         }
     };
 
@@ -410,7 +670,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
                         {/* Settings Link */}
                         <button
-                            onClick={() => setCurrentPage("settings")}
+                            onClick={() => { setCurrentPage("settings"); loadSessions(); }}
                             className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
                                 currentPage === "settings"
                                     ? "bg-[#1f2022] text-white"
@@ -860,31 +1120,250 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                     <div className="max-w-xl w-full space-y-6">
                         <div>
                             <h2 className="text-xl font-bold text-white">Account Details</h2>
-                            <p className="text-xs text-zinc-550 text-zinc-500 mt-1">Manage your zero-knowledge profile and security.</p>
+                            <p className="text-xs text-zinc-500 mt-1">Manage your zero-knowledge profile and master credentials.</p>
                         </div>
 
+                        {/* Profile Section */}
                         <div className="space-y-4 pt-4 border-t border-zinc-800/60">
-                            <div className="space-y-1.5">
-                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Active Vault User</span>
-                                <div className="px-3.5 py-2.5 bg-zinc-900/40 border border-zinc-800/60 rounded-lg text-sm text-zinc-200 font-mono truncate">
-                                    {currentUser || "loading..."}
+                            <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Profile</span>
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg divide-y divide-zinc-800/30">
+                                <div className="flex justify-between items-center pb-2.5">
+                                    <span className="text-xs text-zinc-400">Username</span>
+                                    <span className="text-xs text-zinc-200 font-mono">{currentUser}</span>
+                                </div>
+                                <div className="flex justify-between items-center pt-2.5">
+                                    <span className="text-xs text-zinc-400">Account Created</span>
+                                    <span className="text-xs text-zinc-200">{createdAt || "Loading..."}</span>
                                 </div>
                             </div>
                         </div>
 
+                        {/* Credentials Section */}
                         <div className="space-y-4 pt-6 border-t border-zinc-800/60">
-                            <span className="block text-[10px] font-semibold text-red-500 uppercase tracking-widest">Danger Zone</span>
-                            <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-lg space-y-3">
-                                <h4 className="text-xs font-bold text-red-400">Delete Vault Account</h4>
-                                <p className="text-zinc-400 text-xs leading-relaxed">
-                                    Permanently delete your vault and all encrypted credentials. This action is irreversible and will immediately purge all data from our servers.
-                                </p>
-                                <button
-                                    onClick={openDeleteModal}
-                                    className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-lg text-xs font-bold transition-colors"
-                                >
-                                    Delete Account
-                                </button>
+                            <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Credentials</span>
+                            
+                            {/* Change Username Inline form */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <p className="text-xs font-semibold text-zinc-200">Change Username</p>
+                                        <p className="text-[10px] text-zinc-500">Update your vault identification username</p>
+                                    </div>
+                                    {!isEditingUsername && (
+                                        <button
+                                            onClick={() => {
+                                                setIsEditingUsername(true);
+                                                setNewUsername(currentUser);
+                                                setUsernameError("");
+                                                setUsernameSuccess("");
+                                            }}
+                                            className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 hover:border-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                </div>
+
+                                {isEditingUsername && (
+                                    <form onSubmit={handleUsernameChange} className="space-y-3 pt-2">
+                                        <div className="space-y-1">
+                                            <input
+                                                type="text"
+                                                value={newUsername}
+                                                onChange={(e) => setNewUsername(e.target.value)}
+                                                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-xs font-mono"
+                                                placeholder="New Username"
+                                            />
+                                        </div>
+                                        {usernameError && <p className="text-red-400 text-[10px]">{usernameError}</p>}
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="submit"
+                                                className="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEditingUsername(false)}
+                                                className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-400 rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+                                {usernameSuccess && <p className="text-emerald-400 text-[10px] mt-1">{usernameSuccess}</p>}
+                            </div>
+
+                            {/* Change Master Password form */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <p className="text-xs font-semibold text-zinc-200">Change Master Password</p>
+                                        <p className="text-[10px] text-zinc-500">Updating your password re-encrypts the vault key in memory</p>
+                                    </div>
+                                    {changePasswordStep === "idle" && (
+                                        <button
+                                            onClick={() => {
+                                                setChangePasswordStep("verify");
+                                                setCurrentPassword("");
+                                                setNewPassword("");
+                                                setConfirmNewPassword("");
+                                                setPasswordError("");
+                                                setPasswordSuccess("");
+                                                setShowCurrentPassword(false);
+                                                setShowNewPassword(false);
+                                                setShowConfirmPassword(false);
+                                            }}
+                                            className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 hover:border-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                </div>
+
+                                {changePasswordStep === "verify" && (
+                                    <form onSubmit={handleVerifyCurrentPassword} className="space-y-3 pt-2">
+                                        <div className="space-y-1">
+                                            <label className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Current Password</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showCurrentPassword ? "text" : "password"}
+                                                    value={currentPassword}
+                                                    onChange={(e) => setCurrentPassword(e.target.value)}
+                                                    className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-xs pr-8"
+                                                    placeholder="Current master password"
+                                                    required
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                                                    className="absolute right-2.5 top-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                                >
+                                                    {showCurrentPassword ? (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                                    ) : (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {passwordError && <p className="text-red-400 text-[10px]">{passwordError}</p>}
+
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="submit"
+                                                disabled={isVerifyingPassword || !currentPassword}
+                                                className="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                {isVerifyingPassword ? "Verifying..." : "Verify"}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setChangePasswordStep("idle");
+                                                    setPasswordError("");
+                                                }}
+                                                className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-400 rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+
+                                {changePasswordStep === "re-wrap" && (
+                                    <form onSubmit={handlePasswordChange} className="space-y-3 pt-2">
+                                        <div className="space-y-1">
+                                            <label className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Current Password</label>
+                                            <input
+                                                type="password"
+                                                value="••••••••••••••••"
+                                                disabled
+                                                className="w-full px-2.5 py-1.5 bg-zinc-950/50 border border-zinc-800 rounded text-zinc-500 text-xs cursor-not-allowed opacity-60"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">New Password</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showNewPassword ? "text" : "password"}
+                                                    value={newPassword}
+                                                    onChange={(e) => setNewPassword(e.target.value)}
+                                                    className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-xs pr-8"
+                                                    placeholder="At least 10 chars, uppercase & special char"
+                                                    required
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowNewPassword(!showNewPassword)}
+                                                    className="absolute right-2.5 top-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                                >
+                                                    {showNewPassword ? (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                                    ) : (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Confirm New Password</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showConfirmPassword ? "text" : "password"}
+                                                    value={confirmNewPassword}
+                                                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                                                    className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-xs pr-8"
+                                                    placeholder="Confirm new password"
+                                                    required
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                    className="absolute right-2.5 top-2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                                >
+                                                    {showConfirmPassword ? (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+                                                    ) : (
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268-2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                    )}
+                                                </button>
+                                            </div>
+                                            {newPassword && confirmNewPassword && newPassword !== confirmNewPassword && (
+                                                <p className="text-red-400 text-[10px] mt-1 ml-0.5">Passwords do not match</p>
+                                            )}
+                                        </div>
+
+                                        {passwordError && <p className="text-red-400 text-[10px]">{passwordError}</p>}
+
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="submit"
+                                                disabled={isChangingPassword || !newPassword || !confirmNewPassword || newPassword !== confirmNewPassword}
+                                                className="px-3.5 py-1.5 bg-cyan-700 hover:bg-cyan-600 disabled:opacity-50 text-white rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                {isChangingPassword ? "Updating & wrapping..." : "Change Password"}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setChangePasswordStep("idle");
+                                                    setPasswordError("");
+                                                }}
+                                                className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-400 rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+
+                                {passwordSuccess && <p className="text-emerald-400 text-[10px] mt-1">{passwordSuccess}</p>}
                             </div>
                         </div>
                     </div>
@@ -896,53 +1375,272 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                     <div className="max-w-xl w-full space-y-6">
                         <div>
                             <h2 className="text-xl font-bold text-white">Security Settings</h2>
-                            <p className="text-xs text-zinc-550 text-zinc-500 mt-1">View multi-factor authentication and configure emergency recovery keys.</p>
+                            <p className="text-xs text-zinc-550 text-zinc-500 mt-1">Manage security layers, active sessions, and client options.</p>
                         </div>
 
-                        <div className="space-y-5 pt-4 border-t border-zinc-800/60">
-                            <div className="space-y-2">
-                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Two-Factor Authentication (2FA)</span>
-                                <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg flex items-center justify-between">
+                        {/* Security Section */}
+                        <div className="space-y-4 pt-4 border-t border-zinc-800/60">
+                            <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Security</span>
+                            
+                            {/* Two-Factor Authentication (Reconfigure only) */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                <div className="flex items-center justify-between">
                                     <div className="space-y-0.5">
-                                        <p className="text-xs font-semibold text-zinc-200">Authenticator App</p>
+                                        <p className="text-xs font-semibold text-zinc-200">Two-Factor Authentication (2FA)</p>
                                         <p className="text-[10px] text-zinc-500">TOTP (Google Authenticator) protection on login</p>
                                     </div>
-                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${is2faEnabled ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
-                                        {is2faEnabled ? "Enabled" : "Disabled"}
+                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-455 text-emerald-400 border border-emerald-500/20">
+                                        Enabled
                                     </span>
+                                </div>
+
+                                {reconfigStep === "idle" && (
+                                    <button
+                                        onClick={() => {
+                                            setConfirmModal({
+                                                isOpen: true,
+                                                title: "Reconfigure 2FA",
+                                                message: "Are you sure you want to reconfigure Two-Factor Authentication? Your existing 2FA configuration will remain active until you successfully scan the new QR code and verify it.",
+                                                confirmText: "Reconfigure 2FA",
+                                                cancelText: "Cancel",
+                                                type: "warning",
+                                                onConfirm: () => {
+                                                    setReconfigStep("password-verify");
+                                                    setReconfigPassword("");
+                                                    setReconfigPasswordError("");
+                                                }
+                                            });
+                                        }}
+                                        className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 hover:border-zinc-700 text-zinc-300 rounded-lg text-xs font-semibold transition-colors"
+                                    >
+                                        Reconfigure 2FA
+                                    </button>
+                                )}
+
+                                {reconfigStep === "password-verify" && (
+                                    <form onSubmit={handleReconfig2faInit} className="space-y-3 pt-2 border-t border-zinc-800/40">
+                                        <p className="text-[10px] text-zinc-400">Verify your Master Password to configure a new 2FA device.</p>
+                                        <div className="space-y-1">
+                                            <input
+                                                type="password"
+                                                value={reconfigPassword}
+                                                onChange={(e) => setReconfigPassword(e.target.value)}
+                                                className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-xs"
+                                                placeholder="Master Password"
+                                                required
+                                            />
+                                        </div>
+                                        {reconfigPasswordError && <p className="text-red-400 text-[10px]">{reconfigPasswordError}</p>}
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="submit"
+                                                className="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Verify Password
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setReconfigStep("idle")}
+                                                className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-400 rounded text-[11px] font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
+
+                                {reconfigStep === "scan-qr" && (
+                                    <div className="space-y-4 pt-2 border-t border-zinc-800/40">
+                                        <p className="text-[10px] text-zinc-400">Scan this QR code with Google Authenticator or your password manager, then enter the 6-digit verification code below.</p>
+                                        
+                                        {reconfigQrUrl && (
+                                            <div className="flex flex-col items-center p-3 bg-white rounded-lg w-fit mx-auto">
+                                                <img src={reconfigQrUrl} alt="2FA QR Code" className="w-40 h-40" />
+                                            </div>
+                                        )}
+
+                                        <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded text-center">
+                                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">Secret Key (Manual Entry)</p>
+                                            <code className="text-xs text-zinc-300 select-all font-mono">{reconfigSecret}</code>
+                                        </div>
+
+                                        <form onSubmit={handleReconfig2faVerify} className="space-y-3">
+                                            <div className="space-y-1">
+                                                <label className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider">Verification Code</label>
+                                                <input
+                                                    type="text"
+                                                    value={reconfigTotp}
+                                                    onChange={(e) => setReconfigTotp(e.target.value.replace(/[^0-9]/g, ''))}
+                                                    className="w-full px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none text-white text-center text-sm font-mono tracking-widest"
+                                                    placeholder="000000"
+                                                    maxLength={6}
+                                                    required
+                                                />
+                                            </div>
+                                            {reconfigTotpError && <p className="text-red-400 text-[10px]">{reconfigTotpError}</p>}
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="submit"
+                                                    disabled={isVerifyingReconfig || reconfigTotp.length !== 6}
+                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded text-[11px] font-semibold transition-colors"
+                                                >
+                                                    {isVerifyingReconfig ? "Verifying..." : "Verify & Save 2FA"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setReconfigStep("idle")}
+                                                    className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-400 rounded text-[11px] font-semibold transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                )}
+
+                                {reconfigStep === "success" && (
+                                    <div className="pt-2 border-t border-zinc-800/40 text-emerald-400 text-[11px] flex items-center gap-1.5">
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        <span>2FA successfully reconfigured!</span>
+                                        <button
+                                            onClick={() => setReconfigStep("idle")}
+                                            className="ml-auto text-zinc-400 hover:text-white text-[10px] underline"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Recovery Key (setup/status/regenerate) */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <p className="text-xs font-semibold text-zinc-200">Emergency Recovery Key</p>
+                                        <p className="text-[10px] text-zinc-500">Restore access if you forget your master credentials</p>
+                                    </div>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${hasRecovery ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-805 text-zinc-400 bg-zinc-800"}`}>
+                                        {hasRecovery ? "Active" : "Not Configured"}
+                                    </span>
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                    {!hasRecovery ? (
+                                        <button
+                                            onClick={() => setIsRecoveryModalOpen(true)}
+                                            className="px-3 py-1.5 bg-emerald-800/20 hover:bg-emerald-800/35 border border-emerald-800/30 text-emerald-450 text-emerald-400 rounded-lg text-xs font-semibold transition-colors"
+                                        >
+                                            Generate Recovery Key
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => setIsRecoveryDetailsOpen(true)}
+                                                className="px-3 py-1.5 bg-[#1f2022] hover:bg-[#2b2c2f] border border-zinc-800 text-zinc-300 rounded-lg text-xs font-semibold transition-colors"
+                                            >
+                                                View Recovery Key Status
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setConfirmModal({
+                                                        isOpen: true,
+                                                        title: "Regenerate Recovery Key",
+                                                        message: "Are you sure you want to regenerate your emergency recovery key? Your old recovery key will be invalidated immediately, and you will need to save the new one.",
+                                                        confirmText: "Regenerate Key",
+                                                        cancelText: "Cancel",
+                                                        type: "recovery",
+                                                        onConfirm: () => {
+                                                            setIsRecoveryModalOpen(true);
+                                                        }
+                                                    });
+                                                }}
+                                                className="px-3 py-1.5 bg-amber-808/20 bg-amber-800/20 hover:bg-amber-800/35 border border-amber-800/30 text-amber-400 rounded-lg text-xs font-semibold transition-colors"
+                                            >
+                                                Regenerate Recovery Key
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 
-                            <div className="space-y-2 pt-2">
-                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Zero-Knowledge Recovery</span>
-                                <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="space-y-0.5">
-                                            <p className="text-xs font-semibold text-zinc-200">Emergency Recovery Status</p>
-                                            <p className="text-[10px] text-zinc-500">Restore access to your vault if you forget your master password</p>
-                                        </div>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${hasRecovery ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
-                                            {hasRecovery ? "Active" : "Not Setup"}
-                                        </span>
+                            {/* Active Sessions */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                <div className="space-y-0.5">
+                                    <p className="text-xs font-semibold text-zinc-200">Active Sessions</p>
+                                    <p className="text-[10px] text-zinc-500">Browser and device sessions authenticated with your vault</p>
+                                </div>
+
+                                {sessionsLoading ? (
+                                    <p className="text-[11px] text-zinc-500">Loading active sessions...</p>
+                                ) : sessionsError ? (
+                                    <p className="text-[11px] text-red-400">{sessionsError}</p>
+                                ) : (
+                                    <div className="space-y-2 pt-1">
+                                        {activeSessions.map((session: any) => (
+                                            <div key={session.id} className="flex justify-between items-center p-2.5 bg-zinc-950/40 border border-zinc-800 rounded text-xs font-mono">
+                                                <div className="space-y-0.5">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-xs font-sans font-semibold text-zinc-200">{session.deviceInfo || "Unknown Device"}</span>
+                                                        {session.isCurrent && (
+                                                            <span className="px-1.5 py-0.2 bg-cyan-900/40 text-cyan-400 border border-cyan-800/40 rounded text-[9px] font-sans font-bold">
+                                                                This Device
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[9px] text-zinc-500 font-sans">Expires: {new Date(session.expiresAt).toLocaleString()}</p>
+                                                </div>
+                                                {!session.isCurrent && (
+                                                    <button
+                                                        onClick={() => handleSessionRevoke(session.id)}
+                                                        className="text-[10px] font-sans font-semibold text-red-400 hover:text-red-300 transition-colors"
+                                                    >
+                                                        Revoke
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
-                                    
-                                    <div className="pt-1">
-                                        {!hasRecovery ? (
-                                            <button
-                                                onClick={handleSetupRecovery}
-                                                className="px-4 py-2 bg-emerald-800/20 hover:bg-emerald-800/35 border border-emerald-800/30 hover:border-emerald-700/40 text-emerald-400 rounded-lg text-xs font-bold transition-colors"
-                                            >
-                                                Setup Recovery Key
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => setIsRecoveryDetailsOpen(true)}
-                                                className="px-4 py-2 bg-emerald-800/20 hover:bg-emerald-800/35 border border-emerald-800/30 hover:border-emerald-700/40 text-emerald-400 rounded-lg text-xs font-bold transition-colors"
-                                            >
-                                                View Recovery Status
-                                            </button>
-                                        )}
-                                    </div>
+                                )}
+                            </div>
+
+                            {/* Logout All Devices */}
+                            <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-xs font-semibold text-zinc-200">Logout All Devices</p>
+                                    <p className="text-[10px] text-zinc-500">Revoke every authenticated session worldwide</p>
+                                </div>
+                                <button
+                                    onClick={handleLogoutAll}
+                                    className="px-3 py-1.5 bg-red-900/20 hover:bg-red-900/45 border border-red-900/30 text-red-405 text-red-400 rounded-lg text-xs font-semibold transition-colors"
+                                >
+                                    Logout All
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Danger Zone Section */}
+                        <div className="space-y-4 pt-6 border-t border-zinc-800/60">
+                            <span className="block text-[10px] font-semibold text-red-500 uppercase tracking-widest">Danger Zone</span>
+                            <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-lg space-y-3">
+                                <h4 className="text-xs font-bold text-red-400">Delete Vault Account</h4>
+                                <p className="text-zinc-400 text-xs leading-relaxed">
+                                    Permanently delete your vault and all encrypted credentials. This action is irreversible.
+                                </p>
+                                <button
+                                    onClick={openDeleteModal}
+                                    className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-lg text-xs font-bold transition-colors"
+                                >
+                                    Delete Account
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* About Section */}
+                        <div className="space-y-4 pt-6 border-t border-zinc-800/60">
+                            <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">About</span>
+                            <div className="p-4 bg-zinc-900/20 border border-zinc-800 rounded-lg text-xs text-zinc-400">
+                                <div className="flex justify-between items-center">
+                                    <span>Application Version</span>
+                                    <span className="font-mono text-zinc-300">1.0.0</span>
                                 </div>
                             </div>
                         </div>
@@ -953,9 +1651,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* Delete Account Modal */}
             {isDeleteModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
-                        <div className="p-5">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-[#111213] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+                        <div className="p-5 font-sans">
                             <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-800">
                                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Delete Account</h3>
                                 <button
@@ -1015,7 +1713,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     <div className="flex justify-end gap-2 pt-2">
                                         <button
                                             onClick={() => setIsDeleteModalOpen(false)}
-                                            className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium"
+                                            className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium border border-transparent hover:border-zinc-800 bg-[#1f2022]/40"
                                             disabled={isDeleting}
                                         >
                                             Cancel
@@ -1040,7 +1738,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                                 }
                                             }}
                                             disabled={!deletePassword || isDeleting}
-                                            className="px-3.5 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition-colors disabled:opacity-50 flex items-center gap-2"
+                                            className="px-3.5 py-1.5 rounded bg-red-800 hover:bg-red-700 text-white font-semibold text-xs transition-colors disabled:opacity-50 flex items-center gap-2"
                                         >
                                             {isDeleting ? "Verifying..." : "Next"}
                                         </button>
@@ -1102,7 +1800,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     <div className="flex justify-end gap-2 pt-2">
                                         <button
                                             onClick={() => setDeleteStep(1)}
-                                            className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium"
+                                            className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium border border-transparent hover:border-zinc-800 bg-[#1f2022]/40"
                                             disabled={isDeleting}
                                         >
                                             Back
@@ -1132,9 +1830,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* Recovery Details Modal */}
             {isRecoveryDetailsOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
-                        <div className="p-5">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-[#111213] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+                        <div className="p-5 font-sans">
                             <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-800">
                                 <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                                     <svg className="w-4 h-4 text-emerald-450 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1173,7 +1871,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             <div className="flex justify-end mt-4">
                                 <button
                                     onClick={() => setIsRecoveryDetailsOpen(false)}
-                                    className="px-3.5 py-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-white rounded text-xs font-semibold transition-colors"
+                                    className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium border border-transparent hover:border-zinc-800 bg-[#1f2022]/40"
                                 >
                                     Close
                                 </button>
@@ -1187,9 +1885,9 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
             {/* Item Delete Modal */}
             {isItemDeleteModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
-                        <div className="p-5">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-[#111213] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+                        <div className="p-5 font-sans">
                             <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-800">
                                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Delete Item</h3>
                                 <button
@@ -1257,17 +1955,140 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                         setItemToDelete(null);
                                         setItemDeletePassword("");
                                     }}
-                                    className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium"
+                                    className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium border border-transparent hover:border-zinc-800 bg-[#1f2022]/40"
                                     disabled={isItemDeleting}
                                 >
                                     Cancel
                                 </button>
                                 <button
-                                    className="px-3.5 py-1.5 rounded bg-red-650 hover:bg-red-500 text-white font-semibold text-xs transition-colors flex items-center gap-2"
+                                    className="px-3.5 py-1.5 rounded bg-red-800 hover:bg-red-700 text-white font-semibold text-xs transition-colors shadow-sm flex items-center gap-2"
                                     onClick={confirmItemDelete}
                                     disabled={isItemDeleting}
                                 >
                                     {isItemDeleting ? "Verifying..." : "Delete Item"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Custom Confirmation Modal */}
+            {confirmModal.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-[#111213] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+                        <div className="p-5 font-sans">
+                            <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-805 border-zinc-800">
+                                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                    {confirmModal.type === "danger" && (
+                                        <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                    )}
+                                    {confirmModal.type === "warning" && (
+                                        <svg className="w-4 h-4 text-cyan-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
+                                    )}
+                                    {confirmModal.type === "recovery" && (
+                                        <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                        </svg>
+                                    )}
+                                    {confirmModal.type === "info" && (
+                                        <svg className="w-4 h-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    )}
+                                    {confirmModal.title}
+                                </h3>
+                                <button
+                                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                                    className="text-zinc-500 hover:text-white transition-colors"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <p className="text-zinc-400 text-xs leading-relaxed mb-6">
+                                {confirmModal.message}
+                            </p>
+
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                                    className="px-3.5 py-1.5 rounded text-zinc-400 hover:text-white transition-colors text-xs font-medium border border-transparent hover:border-zinc-800 bg-[#1f2022]/40"
+                                >
+                                    {confirmModal.cancelText}
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                        await confirmModal.onConfirm();
+                                    }}
+                                    className={`px-3.5 py-1.5 rounded text-white font-semibold text-xs transition-colors shadow-sm ${
+                                        confirmModal.type === "danger"
+                                            ? "bg-red-800 hover:bg-red-700"
+                                            : confirmModal.type === "warning"
+                                            ? "bg-cyan-700 hover:bg-cyan-600"
+                                            : confirmModal.type === "recovery"
+                                            ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-100"
+                                            : "bg-cyan-700 hover:bg-cyan-600"
+                                    }`}
+                                >
+                                    {confirmModal.confirmText}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Alert Modal */}
+            {alertModal.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-[#111213] border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
+                        <div className="p-5 font-sans">
+                            <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-805 border-zinc-800">
+                                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                                    {alertModal.type === "error" && (
+                                        <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    )}
+                                    {alertModal.type === "success" && (
+                                        <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    )}
+                                    {alertModal.type === "info" && (
+                                        <svg className="w-4 h-4 text-cyan-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    )}
+                                    {alertModal.title}
+                                </h3>
+                                <button
+                                    onClick={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                                    className="text-zinc-500 hover:text-white transition-colors"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <p className="text-zinc-400 text-xs leading-relaxed mb-6">
+                                {alertModal.message}
+                            </p>
+
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+                                    className="px-4 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs transition-colors border border-zinc-700"
+                                >
+                                    Dismiss
                                 </button>
                             </div>
                         </div>

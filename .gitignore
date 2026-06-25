@@ -14,23 +14,11 @@ out/
 build/
 dist/
 
-# Temporary Scripts
-debug-user.ts
-reset-db.ts
-test-recovery.ts
-reproduction_save_vault.ts
-technical_audit_results.txt
+# Turbo
+.turbo
 
-
-# Misc
-.DS_Store
-*.pem
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# Vercel
+.vercel
 
 # Local Env Files
 .env
@@ -40,11 +28,21 @@ yarn-error.log*
 .env.production.local
 *.env
 
-# Turbo
-.turbo
+# Prisma generated output
+packages/database/src/generated/
 
-# Vercel
-.vercel
+# TypeScript build cache
+*.tsbuildinfo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # Editor directories and files
 .idea
@@ -55,19 +53,16 @@ yarn-error.log*
 *.sln
 *.sw?
 
-# OS metadata
-.DS_Store
-Thumbs.db
+# Security
+*.pem
 
-# Brain/Artifacts (Agent)
+# Agent artifacts (Gemini/Antigravity)
 .gemini
 
-# Prisma custom output generated directory
-packages/database/src/generated/
-
-# TypeScript build info cache
-*.tsbuildinfo
-
-#checklist
+# Scratch / one-off scripts
+debug-user.ts
+reset-db.ts
+test-recovery.ts
+reproduction_save_vault.ts
+technical_audit_results.txt
 final_checklist.md
-

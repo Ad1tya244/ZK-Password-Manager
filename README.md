@@ -1,191 +1,154 @@
 # Zero-Knowledge Password Manager
 
-A Zero-Knowledge, security-first password manager implementing client-side AES-GCM encryption, local PBKDF2 key derivation, Argon2id server-side password hashing, time-based OTP two-factor authentication, database-backed persistent sessions, and distributed rate limiting.
+A security-first, monorepo password manager implementing a **zero-knowledge cryptographic architecture** — the server is treated as completely untrusted. All vault encryption, key derivation, and recovery operations are performed entirely client-side using the native Web Crypto API. The backend never handles plaintext credentials, master passwords, or raw key material.
 
 ---
 
 ## System Architecture
 
-This project is a monorepo managed by [TurboRepo](https://turbo.build/) containing both the client application and serverless API handlers in a single package.
+Managed by [TurboRepo](https://turbo.build/), this monorepo co-locates the Next.js 14 frontend and its API Route Handlers in a single deployable package.
 
-### Monorepo Workspace Structure
 ```
+zk-password-manager/
 ├── apps/
-│   └── web/                   # Next.js 14 App Router application (Frontend + co-located API Route Handlers)
+│   ├── web/                        # Next.js 14 (App Router) — UI + co-located API Route Handlers
+│   │   └── src/
+│   │       ├── app/api/            # Route Handlers (auth/*, vault/*)
+│   │       ├── components/         # VaultDashboard, AuthForm, RecoverySetup
+│   │       ├── lib/                # server-auth, validation, rate-limit, services
+│   │       └── utils/              # encryption.utils, password-strength
+│   └── api/                        # Standalone API server (development)
 ├── packages/
-│   ├── crypto/                # Shared package containing server-side cryptographical helpers & JWT signing
-│   ├── database/              # Shared package configuring Prisma ORM and schemas
-│   └── shared/                # Shared package for types and validation Zod schemas
-├── package.json               # Root monorepo configuration
-└── turbo.json                 # Turbo build cache configurations
+│   ├── crypto/                     # Client-side Web Crypto wrappers (PBKDF2, AES-GCM, HKDF)
+│   ├── database/                   # Prisma ORM schema + singleton client
+│   └── shared/                     # Zod validation schemas + shared TypeScript types
+├── package.json                    # Monorepo root
+└── turbo.json                      # Turbo pipeline configuration
 ```
 
 ---
 
-## Security Model & Cryptographical Primitives
+## Security Model & Cryptographic Primitives
 
-The core architectural requirement is that **the server is untrusted**. Plaintext vault items, master passwords, or raw recovery keys are never exposed over the network.
+### 1. Key Derivation — Dual-Key Wrapped Architecture
 
-### 1. Key Derivation & Master Password Security
-* **Authentication**: The client does not transmit the user's master password. Instead, it derives an **Authentication Hash** locally using PBKDF2-HMAC-SHA256 with 100,000 iterations and a unique salt.
-* **Server Hashing**: Upon receipt, the server hashes the client's Authentication Hash using **Argon2id** (with a unique user salt) before comparing it against the stored value. This provides robust defense against server-side database leaks and brute-force attacks.
+| Key | Derivation | Purpose |
+|-----|-----------|---------|
+| **KEK** (Key Encryption Key) | PBKDF2-HMAC-SHA256, 100k iterations, unique `vaultSalt` | Wraps/unwraps the VEK; never sent to server |
+| **VEK** (Vault Encryption Key) | 256-bit random AES key generated at registration | Encrypts all vault items (AES-GCM 256-bit) |
+| **Recovery KEK** | HKDF-SHA256 from 256-bit recovery key | Wraps a copy of the VEK for account recovery |
 
-### 2. Vault Encryption (AES-GCM)
-* **Vault Encryption Key (VEK)**: A random 256-bit AES key (VEK) is generated locally on registration. All vault entries are encrypted on the client device using **AES-GCM (256-bit)**.
-* **Key Wrapping (KEK)**: The VEK is wrapped (encrypted) on the client side using the **Key Encryption Key (KEK)** derived from the master password. This allows the user to change their master password (which re-wraps the VEK) without having to re-encrypt every single item in their vault.
+Changing the master password only requires re-wrapping the VEK — vault item ciphertexts are untouched.
 
-### 3. Persistent Session Management
-* **Database-Backed Sessions**: Added a Prisma `Session` model. Access tokens are hashed using SHA-256 before being stored in the database.
-* **Dual Verification**: Authed requests verify both the JWT signature and that a matching active session hash exists in the database.
-* **Session Revocations**: Logout revokes the current session. Added a "Logout All Devices" endpoint that deletes all sessions for the user. Session revocation is also triggered upon password recovery and account deletion (via cascade).
+### 2. Authentication
+- Client sends only the **authentication hash** (PBKDF2 output), never the raw master password.
+- Server re-hashes it with **Argon2id** before storing or comparing.
 
-### 4. Redesigned 3-Step Account Recovery Wizard
-* **Wizard Sequence**:
-  * **Step 1 (Verify Identity)**: Requests Username and 64-char Recovery Key. Validates recovery key hash using `/auth/recovery/init` and checks if the returned username matches user input. If correct, pre-generates the new 2FA secret and QR code via `/auth/enable-2fa`.
-  * **Step 2 (Set Password)**: Prompts user to input and confirm the new master password. Validates password strength and match. Decrypts the existing VEK using the recovery KEK, and re-wraps it with the new master password KEK.
-  * **Step 3 (Force 2FA)**: Displays the newly generated 2FA QR code and demands the 6-digit verification code.
-* **Transactional Backend Reset**:
-  * No database updates happen until the user successfully completes all steps, including mandatory 2FA configuration.
-  * The `/auth/recovery/reset` endpoint verifies both the recovery key and the new 2FA code in a single transaction. On success, it overwrites the old password, vault salt, wrapped VEK, and 2FA secret in the database, revokes all previous sessions, and logs the user in immediately.
-  * This prevents password-only logins after recovery and resolves user lockout risks safely.
+### 3. Session Management
+- Database-backed `Session` table stores SHA-256 hashes of JWT access tokens.
+- Every authenticated request verifies **both** the JWT signature **and** an active session record.
+- Sessions are revoked on: logout, logout-all, master password change, account recovery, and account deletion (cascade).
+- Duplicate sessions for the same device are prevented during login.
+- Expired sessions are cleaned up automatically during authentication.
+- Device information (browser + OS) is parsed from the User-Agent at session creation and stored directly — not re-parsed on every retrieval.
+
+### 4. Zero-Knowledge Account Recovery (3-Step Wizard)
+
+| Step | Client Actions | Server Actions |
+|------|---------------|----------------|
+| **1 — Verify Identity** | Derive Recovery KEK & hash from recovery key; submit hash | Lookup user by hash; return recovery-wrapped VEK + pre-generate new 2FA |
+| **2 — New Password** | Decrypt VEK with Recovery KEK; re-wrap with new KEK + new salt | (No DB writes yet) |
+| **3 — Force 2FA** | Scan new QR code; submit TOTP | Verify TOTP; atomic transaction: update password hash, wrapped VEK, 2FA secret; revoke all sessions; issue new session |
+
+### 5. UI — Custom Application Modals
+All confirmation and alert flows (Logout All Devices, Revoke Session, Delete Account, Regenerate Recovery Key, Reconfigure 2FA, Recovery Key Setup) use a unified custom modal system with a consistent dark design — no native browser `alert()`, `confirm()`, or `prompt()` dialogs.
 
 ---
 
-## Security Architecture Diagrams
+## Key Security Architecture Diagrams
 
-### 1. Local Key Derivation Flow
+### Key Derivation Flow
 ```
-                     +-----------------+
-                     | Master Password |
-                     +--------+--------+
-                              |
-                              v
-                  +-----------+-----------+
-                  |  PBKDF2-HMAC-SHA256   | <--- Salt (from server/DB)
-                  |  (100,000 iterations) |
-                  +-----------+-----------+
-                              |
-            +-----------------+-----------------+
-            |                                   | (256-bit derived key)
-            v                                   v
-+-----------+-----------+           +-----------+-----------+
-|  Authentication Hash  |           | Key Encryption Key    |
-|  (Client-side Hash)   |           | (KEK, in-memory only) |
-+-----------+-----------+           +-----------+-----------+
-            |                                   |
-            | Sent to Server                    | Used to wrap/unwrap
-            v                                   | Vault Encryption Key (VEK)
-+-----------+-----------+                       |
-|   Server-side Hash    |                       v
-|  (Argon2id Hashing)   |           +-----------+-----------+
-+-----------------------+           | Wrapped VEK           |
-                                    | (Stored on Server)    |
-                                    +-----------------------+
+Master Password ──► PBKDF2-HMAC-SHA256 (100k iter, vaultSalt)
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+    Auth Hash (→ server)     KEK (in-memory, non-extractable)
+                                     │
+                               Wraps/Unwraps
+                                     ▼
+                            VEK (AES-GCM 256-bit)
+                                     │
+                           Encrypts all vault items
 ```
 
-### 2. Vault Data Encryption/Decryption Flow
+### Vault Encryption Flow
 ```
-[Client Device (In-Memory Only)]              [Server (Database Storage)]
-+------------------------------+              +--------------------------+
-|  Plaintext Password (Data)   |              |                          |
-|              |               |              |                          |
-|              v (AES-GCM-256) |              |                          |
-|  +-----------+-----------+   |  Network     |                          |
-|  |     Encrypted Blob    +----------------->| Stored in Vault Table    |
-|  +-----------------------+   |  Transfer    |                          |
-|                              |              |                          |
-|  +-----------------------+   |              |                          |
-|  |  Vault Encryption Key |   |              |                          |
-|  |       (VEK)           |   |              |                          |
-|  +-----------+-----------+   |              |                          |
-|              |               |              |                          |
-|              v (AES-GCM Key  |              |                          |
-|                 Wrapping)    |              |                          |
-|  +-----------+-----------+   |  Network     |                          |
-|  |      Wrapped VEK      +----------------->| Stored in Users Table    |
-|  +-----------------------+   |  Transfer    | (recoveryEncryptedVEK /  |
-|                              |              |  encryptedVEK)           |
-+------------------------------+              +--------------------------+
-```
-
-### 3. Redesigned 3-Step Account Recovery Flow
-```
-Step 1: Identity Verification
-[Input Username & Key] ---> [Derive Recovery Key Hash] ---> POST /auth/recovery/init
-                                                                   |
-                                                         (Verify Key & Username)
-                                                                   v
-                                                         Generate & return new 2FA
-                                                         secret & QR code
-
-Step 2: Password Reset
-[Input New Password]   ---> [Decrypt VEK using Recovery KEK] ---> [Re-wrap VEK with new Master Password KEK]
-
-Step 3: Mandate 2FA Setup
-[Scan QR Code & Input TOTP] ---> POST /auth/recovery/reset
-                                       |
-                             (Verify Recovery Key & TOTP)
-                                       |
-                                       v
-                             [Prisma Update Transaction]
-                             - Update password hash, salt, wrapped VEK
-                             - Save new 2FA secret (deletes old 2FA)
-                             - Revoke all user DB sessions
-                                       |
-                                       v
-                             Generate new session & JWTs
-                             Set cookies -> Redirect to Vault
+[Browser]                              [Server DB]
+Plaintext ──► AES-GCM(VEK) ──────────► encryptedBlob, iv, authTag
+VEK       ──► AES-GCM(KEK) ──────────► encryptedVEK, vekIV, vekAuthTag
 ```
 
 ---
 
-## API Hardening & Payload Sanitization
+## API Hardening
 
-### Zod Request Schemas
-All state-changing request bodies are validated on arrival to block SQL/NoSQL injections, user enumerations, and malformed requests:
-* **Registration / Login**: Enforces strict minimum lengths, regex character constraints, and password confirmation validation.
-* **Base64 Payload Fields**: Encryption vectors (`IV`, `authTag`, and `wrappedVEK`) are verified using Base64 regular expressions before database entry.
-* **Parameters Validation**: Path parameters (like vault item UUIDs) are verified using a `z.string().uuid()` schema.
-
-### Rate Limiting & Safety
-* **Upstash Distributed Rate Limiting**: Replaced in-memory Map rate limiting with `@upstash/redis` and `@upstash/ratelimit` SDKs. This ensures rate limits (10 requests per 60 seconds per IP) are tracked consistently across multiple serverless instances and survive restarts.
-* **Fail-Open Fallback**: Limiter fails open gracefully if the remote Redis calls time out or if credentials are unconfigured, logging warnings to ensure service availability.
+- **Zod schemas** on every state-changing endpoint (registration, login, vault CRUD, recovery)
+- **Base64 validation** on all cryptographic payload fields (IV, authTag, wrapped VEK)
+- **UUID validation** on path parameters
+- **Upstash distributed rate limiting** — 10 req/60s per IP across serverless instances; fails open if Redis is unavailable
+- **Account lockout** — database-enforced 10-minute lockout after 5 failed login attempts
+- **Double verification** on account deletion — requires both master password and TOTP
 
 ---
 
-## Local Setup & Development
+## Local Development
 
-### 1. Installation
-Install all dependencies across workspaces from the monorepo root:
+### 1. Install dependencies
 ```bash
 npm install
 ```
 
-### 2. Environment Configurations
-Create a `.env.local` file inside `apps/web` (use the root `.env.example` as a template):
+### 2. Configure environment
+Create `apps/web/.env.local` (see `.env.example`):
 ```env
-# apps/web/.env.local
 DATABASE_URL="mysql://root:password@127.0.0.1:3306/zk_password_manager"
 JWT_SECRET="your-super-secure-random-jwt-signing-key"
 UPSTASH_REDIS_REST_URL="https://your-upstash-redis-url.upstash.io"
 UPSTASH_REDIS_REST_TOKEN="your_upstash_redis_token"
 ```
 
-### 3. Database Migration & ORM Client Generation
-Initialize your database connection and compile the Prisma client engine:
+### 3. Push database schema
 ```bash
-DATABASE_URL="mysql://root:password@127.0.0.1:3306/zk_password_manager" ./packages/database/node_modules/.bin/prisma db push --schema=packages/database/prisma/schema.prisma
+DATABASE_URL="mysql://root:password@127.0.0.1:3306/zk_password_manager" \
+  ./packages/database/node_modules/.bin/prisma db push \
+  --schema=packages/database/prisma/schema.prisma
 ```
 
-### 4. Running the Project
-Start the Next.js development server:
+### 4. Start dev server
 ```bash
 npm run dev
+# App served at http://localhost:3000
 ```
-The application will serve locally at **`http://localhost:3000`**.
 
-### 5. Production Build
-To run a type-checking check and compile optimized bundles for deployment:
+### 5. Production build
 ```bash
 npm run build
 ```
+
+---
+
+## Technology Stack
+
+| Technology | Purpose |
+|-----------|---------|
+| **Next.js 14** (App Router) | React UI + co-located serverless API Route Handlers |
+| **TypeScript** | End-to-end type safety across all packages |
+| **Web Crypto API** | Native browser AES-GCM, PBKDF2, HKDF — hardware-accelerated |
+| **Argon2id** | Memory-hard server-side password hashing |
+| **Prisma ORM + MySQL** | Type-safe database access; relational integrity with cascading deletes |
+| **JWT + HttpOnly Cookies** | Stateless auth tokens; XSS-resistant transport |
+| **Otplib + QRCode** | RFC 6238 TOTP 2FA with QR code generation |
+| **Upstash Redis** | Distributed rate limiting across serverless instances |
+| **Zod** | Runtime schema validation on all API payloads |
+| **TurboRepo** | Monorepo orchestration, build caching, workspace dependency management |
