@@ -12,6 +12,7 @@ export interface DecryptedVaultItem {
     site: string;
     username: string;
     password: string;
+    notes?: string;
     createdAt: string;
     updatedAt: string;
 }

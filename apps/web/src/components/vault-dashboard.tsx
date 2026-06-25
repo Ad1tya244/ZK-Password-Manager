@@ -72,6 +72,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [site, setSite] = useState("");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [notes, setNotes] = useState("");
     const [loading, setLoading] = useState(true);
     const [deletePassword, setDeletePassword] = useState("");
     const [isDeleting, setIsDeleting] = useState(false);
@@ -100,6 +101,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [editSite, setEditSite] = useState("");
     const [editUsername, setEditUsername] = useState("");
     const [editPassword, setEditPassword] = useState("");
+    const [editNotes, setEditNotes] = useState("");
     const [showEditPassword, setShowEditPassword] = useState(false);
 
     // Strength State
@@ -114,7 +116,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
     const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
     const [currentUser, setCurrentUser] = useState("");
     const [showPasswordDetail, setShowPasswordDetail] = useState(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [currentPage, setCurrentPage] = useState<"vault" | "account" | "settings">("vault");
 
     const loadItems = async () => {
         try {
@@ -178,7 +180,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         }
 
         try {
-            const dataToEncrypt = JSON.stringify({ site, username, password });
+            const dataToEncrypt = JSON.stringify({ site, username, password, notes });
             const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.post("/vault", {
@@ -190,6 +192,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             setSite("");
             setUsername("");
             setPassword("");
+            setNotes("");
             loadItems();
         } catch (e: any) {
             console.error("Save Error:", e);
@@ -253,6 +256,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         setEditSite(item.site);
         setEditUsername(item.username);
         setEditPassword(item.password);
+        setEditNotes(item.notes || "");
         setShowEditPassword(false);
     };
 
@@ -266,7 +270,12 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
         }
 
         try {
-            const dataToEncrypt = JSON.stringify({ site: editSite, username: editUsername, password: editPassword });
+            const dataToEncrypt = JSON.stringify({
+                site: editSite,
+                username: editUsername,
+                password: editPassword,
+                notes: editNotes
+            });
             const { ciphertext, iv, authTag } = await EncryptionService.encrypt(dataToEncrypt);
 
             await api.put(`/vault/${editingItem.id}`, {
@@ -276,6 +285,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
             });
 
             setEditingItem(null);
+            setEditNotes("");
             loadItems();
         } catch (e: any) {
             console.error("Update Error:", e);
@@ -352,7 +362,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
                     {/* New Entry Button */}
                     <button
-                        onClick={() => setSelectedItemId(null)}
+                        onClick={() => {
+                            setCurrentPage("vault");
+                            setSelectedItemId(null);
+                        }}
                         className="w-full py-2.5 bg-emerald-800 hover:bg-emerald-700 text-emerald-100 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -361,22 +374,56 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                         New Entry
                     </button>
 
-                    {/* Settings Link */}
-                    <button
-                        onClick={() => setIsSettingsOpen(true)}
-                        className="w-full flex items-center justify-between py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-                    >
-                        <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {/* Navigation Section */}
+                    <div className="space-y-1 pt-2 border-t border-zinc-800/40">
+                        <span className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-widest px-1 mb-2">Navigation</span>
+                        
+                        {/* Vault Link */}
+                        <button
+                            onClick={() => setCurrentPage("vault")}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                                currentPage === "vault"
+                                    ? "bg-[#1f2022] text-white"
+                                    : "text-zinc-400 hover:text-zinc-250 hover:text-zinc-200 hover:bg-[#1a1b1d]"
+                            }`}
+                        >
+                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <span>Vault</span>
+                        </button>
+
+                        {/* Account Link */}
+                        <button
+                            onClick={() => setCurrentPage("account")}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                                currentPage === "account"
+                                    ? "bg-[#1f2022] text-white"
+                                    : "text-zinc-400 hover:text-zinc-250 hover:text-zinc-200 hover:bg-[#1a1b1d]"
+                            }`}
+                        >
+                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span>Account</span>
+                        </button>
+
+                        {/* Settings Link */}
+                        <button
+                            onClick={() => setCurrentPage("settings")}
+                            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                                currentPage === "settings"
+                                    ? "bg-[#1f2022] text-white"
+                                    : "text-zinc-400 hover:text-zinc-250 hover:text-zinc-200 hover:bg-[#1a1b1d]"
+                            }`}
+                        >
+                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
                             <span>Settings</span>
-                        </div>
-                        <svg className="w-3 h-3 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </button>
+                        </button>
+                    </div>
                 </div>
 
                 {/* Logout Button */}
@@ -391,8 +438,10 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                 </button>
             </div>
 
-            {/* Pane 2: Middle List Pane */}
-            <div className="w-[280px] shrink-0 bg-[#111213] border-r border-zinc-800/60 flex flex-col overflow-hidden h-full">
+            {currentPage === "vault" && (
+                <>
+                    {/* Pane 2: Middle List Pane */}
+                    <div className="w-[280px] shrink-0 bg-[#111213] border-r border-zinc-800/60 flex flex-col overflow-hidden h-full">
                 {/* Search Bar */}
                 <div className="p-3 shrink-0">
                     <div className="relative flex items-center">
@@ -439,7 +488,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                     }}
                                     className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
                                         isSelected
-                                            ? "bg-zinc-800/60 border-l-2 border-l-emerald-700 pl-[10px]"
+                                            ? "bg-zinc-800/60"
                                             : "hover:bg-zinc-800/30"
                                     }`}
                                 >
@@ -621,6 +670,28 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 })()}
                             </div>
 
+                            {/* Notes Field */}
+                            <div className="space-y-1.5">
+                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Notes</span>
+                                {editingItem?.id === selectedItem.id ? (
+                                    <textarea
+                                        value={editNotes}
+                                        onChange={(e) => setEditNotes(e.target.value)}
+                                        placeholder="Add notes..."
+                                        rows={4}
+                                        className="w-full px-3 py-2.5 bg-zinc-900/80 border border-zinc-600 rounded-lg text-sm text-white focus:border-zinc-500 focus:outline-none transition-all resize-y font-sans"
+                                    />
+                                ) : (
+                                    <textarea
+                                        value={selectedItem.notes || ""}
+                                        readOnly
+                                        placeholder="No notes"
+                                        rows={4}
+                                        className="w-full px-3 py-2.5 bg-zinc-900/50 border border-zinc-700/60 rounded-lg text-sm text-zinc-300 focus:outline-none resize-none font-sans"
+                                    />
+                                )}
+                            </div>
+
                             {/* Edit error */}
                             {editingItem?.id === selectedItem.id && editError && (
                                 <div className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-lg flex items-center gap-1.5">
@@ -751,6 +822,17 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                                 )}
                             </div>
 
+                            <div className="space-y-1">
+                                <label className="block text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">Notes (Optional)</label>
+                                <textarea
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
+                                    placeholder="Add notes..."
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-zinc-950/40 border border-zinc-800 rounded focus:border-zinc-700 focus:outline-none outline-none text-white text-xs placeholder-zinc-600 transition-all font-sans resize-y"
+                                />
+                            </div>
+
                             {addError && (
                                 <div className="p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] rounded flex items-center gap-1.5 font-sans">
                                     <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -770,107 +852,104 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                     </div>
                 )}
             </div>
-        </div>
+                </>
+            )}
 
-            {/* Settings Modal */}
-            {isSettingsOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl overflow-hidden">
-                        <div className="p-5">
-                            <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-800">
-                                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Account Settings</h3>
-                                <button
-                                    onClick={() => setIsSettingsOpen(false)}
-                                    className="text-zinc-500 hover:text-white transition-colors"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
+            {currentPage === "account" && (
+                <div className="flex-1 bg-[#111213] flex flex-col overflow-y-auto p-8 h-full">
+                    <div className="max-w-xl w-full space-y-6">
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Account Details</h2>
+                            <p className="text-xs text-zinc-550 text-zinc-500 mt-1">Manage your zero-knowledge profile and security.</p>
+                        </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-1">
-                                    <span className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Active Vault User</span>
-                                    <div className="px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded text-xs text-zinc-300 font-mono truncate">
-                                        {currentUser || "loading..."}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <span className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-wider ml-0.5">Security Settings</span>
-                                    <div className="p-3 bg-zinc-950 border border-zinc-800 rounded space-y-3">
-                                        <div className="flex items-center justify-between text-xs">
-                                            <span className="text-zinc-400">Two-Factor Authentication (2FA)</span>
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${is2faEnabled ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
-                                                {is2faEnabled ? "Enabled" : "Disabled"}
-                                            </span>
-                                        </div>
-
-                                        <div className="flex items-center justify-between text-xs pt-2.5 border-t border-zinc-900">
-                                            <span className="text-zinc-400">Recovery Status</span>
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${hasRecovery ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
-                                                {hasRecovery ? "Active" : "Not Setup"}
-                                            </span>
-                                        </div>
-
-                                        <div className="pt-1 flex gap-2">
-                                            {!hasRecovery ? (
-                                                <button
-                                                    onClick={() => {
-                                                        setIsSettingsOpen(false);
-                                                        handleSetupRecovery();
-                                                    }}
-                                                    className="w-full text-center px-3 py-1.5 rounded text-xs font-semibold text-emerald-455 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 transition-colors"
-                                                >
-                                                    Setup Recovery Key
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => {
-                                                        setIsSettingsOpen(false);
-                                                        setIsRecoveryDetailsOpen(true);
-                                                    }}
-                                                    className="w-full text-center px-3 py-1.5 rounded text-xs font-semibold text-emerald-455 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 transition-colors"
-                                                >
-                                                    View Recovery Status
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2 pt-2 border-t border-zinc-800">
-                                    <span className="block text-[8px] font-semibold text-red-500 uppercase tracking-wider ml-0.5">Danger Zone</span>
-                                    <div className="p-3 bg-red-500/5 border border-red-950/40 rounded flex flex-col gap-2.5">
-                                        <p className="text-red-400/80 text-[10px] leading-relaxed">
-                                            Permanently delete your vault and all encrypted data. This action is irreversible.
-                                        </p>
-                                        <button
-                                            onClick={() => {
-                                                setIsSettingsOpen(false);
-                                                openDeleteModal();
-                                            }}
-                                            className="w-full text-center px-3 py-1.5 rounded bg-red-600 hover:bg-red-505 hover:bg-red-500 text-white font-semibold text-xs transition-colors"
-                                        >
-                                            Delete Account
-                                        </button>
-                                    </div>
+                        <div className="space-y-4 pt-4 border-t border-zinc-800/60">
+                            <div className="space-y-1.5">
+                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Active Vault User</span>
+                                <div className="px-3.5 py-2.5 bg-zinc-900/40 border border-zinc-800/60 rounded-lg text-sm text-zinc-200 font-mono truncate">
+                                    {currentUser || "loading..."}
                                 </div>
                             </div>
+                        </div>
 
-                            <div className="flex justify-end mt-4">
+                        <div className="space-y-4 pt-6 border-t border-zinc-800/60">
+                            <span className="block text-[10px] font-semibold text-red-500 uppercase tracking-widest">Danger Zone</span>
+                            <div className="p-4 bg-red-950/10 border border-red-900/20 rounded-lg space-y-3">
+                                <h4 className="text-xs font-bold text-red-400">Delete Vault Account</h4>
+                                <p className="text-zinc-400 text-xs leading-relaxed">
+                                    Permanently delete your vault and all encrypted credentials. This action is irreversible and will immediately purge all data from our servers.
+                                </p>
                                 <button
-                                    onClick={() => setIsSettingsOpen(false)}
-                                    className="px-3.5 py-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 rounded text-xs font-semibold transition-colors"
+                                    onClick={openDeleteModal}
+                                    className="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-lg text-xs font-bold transition-colors"
                                 >
-                                    Close
+                                    Delete Account
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
+
+            {currentPage === "settings" && (
+                <div className="flex-1 bg-[#111213] flex flex-col overflow-y-auto p-8 h-full">
+                    <div className="max-w-xl w-full space-y-6">
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Security Settings</h2>
+                            <p className="text-xs text-zinc-550 text-zinc-500 mt-1">View multi-factor authentication and configure emergency recovery keys.</p>
+                        </div>
+
+                        <div className="space-y-5 pt-4 border-t border-zinc-800/60">
+                            <div className="space-y-2">
+                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Two-Factor Authentication (2FA)</span>
+                                <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg flex items-center justify-between">
+                                    <div className="space-y-0.5">
+                                        <p className="text-xs font-semibold text-zinc-200">Authenticator App</p>
+                                        <p className="text-[10px] text-zinc-500">TOTP (Google Authenticator) protection on login</p>
+                                    </div>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${is2faEnabled ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
+                                        {is2faEnabled ? "Enabled" : "Disabled"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 pt-2">
+                                <span className="block text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">Zero-Knowledge Recovery</span>
+                                <div className="p-4 bg-zinc-900/30 border border-zinc-800/60 rounded-lg space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs font-semibold text-zinc-200">Emergency Recovery Status</p>
+                                            <p className="text-[10px] text-zinc-500">Restore access to your vault if you forget your master password</p>
+                                        </div>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${hasRecovery ? "bg-emerald-500/10 text-emerald-450 text-emerald-400 border border-emerald-500/20" : "bg-zinc-800 text-zinc-400"}`}>
+                                            {hasRecovery ? "Active" : "Not Setup"}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="pt-1">
+                                        {!hasRecovery ? (
+                                            <button
+                                                onClick={handleSetupRecovery}
+                                                className="px-4 py-2 bg-emerald-800/20 hover:bg-emerald-800/35 border border-emerald-800/30 hover:border-emerald-700/40 text-emerald-400 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                Setup Recovery Key
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => setIsRecoveryDetailsOpen(true)}
+                                                className="px-4 py-2 bg-emerald-800/20 hover:bg-emerald-800/35 border border-emerald-800/30 hover:border-emerald-700/40 text-emerald-400 rounded-lg text-xs font-bold transition-colors"
+                                            >
+                                                View Recovery Status
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
 
             {/* Delete Account Modal */}
             {isDeleteModalOpen && (

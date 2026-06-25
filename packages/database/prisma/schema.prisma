@@ -42,6 +42,7 @@ model Vault {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// AES-GCM encrypted JSON containing site, username, password, and optional notes
   encryptedBlob Bytes
   iv        Bytes
   authTag   Bytes

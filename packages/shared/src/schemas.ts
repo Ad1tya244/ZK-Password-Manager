@@ -76,3 +76,11 @@ export const UpdateVaultItemSchema = z.object({
     iv: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
     authTag: z.string().regex(BASE64_REGEX, "Invalid base64 encoding"),
 });
+
+export const DecryptedVaultItemPayloadSchema = z.object({
+    site: z.string().min(1, "Website/Title is required"),
+    username: z.string().min(1, "Username is required"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    notes: z.string().optional(),
+});
+
