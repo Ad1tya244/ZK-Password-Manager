@@ -70,7 +70,7 @@ export default function Home() {
                             </p>
                         </div>
                         <p className="text-zinc-400 text-sm md:text-base leading-relaxed">
-                            A secure-by-default password manager where the server is treated as completely untrusted. All encryption, key derivation, and recovery key generation happen locally inside your browser's SubtleCrypto sandbox.
+                        A secure-by-default password manager where the server is treated as completely untrusted. All encryption, key derivation, and vault decryption happen locally inside your browser's Web Crypto API — the server never sees your master password or raw keys.
                         </p>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-zinc-800/80">
@@ -84,7 +84,7 @@ export default function Home() {
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-semibold text-zinc-200">Local PBKDF2 Stretching</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        Derived KEK using 100,000 iterations of HMAC-SHA256 keeps your master password in-browser only.
+                                        PBKDF2-HMAC-SHA256 (100,000 iterations) derives a KEK from your master password locally. The KEK wraps a random VEK — your password never leaves the browser.
                                     </p>
                                 </div>
                             </div>
@@ -99,7 +99,7 @@ export default function Home() {
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-semibold text-zinc-200">AES-GCM 256-bit Encryption</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        Vault secrets are encrypted using authenticated symmetric cipher tags before network transit.
+                                        All vault items are encrypted client-side with a random 256-bit VEK using AES-GCM. Only the encrypted blob, IV, and auth tag are stored on the server.
                                     </p>
                                 </div>
                             </div>
@@ -114,7 +114,7 @@ export default function Home() {
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-semibold text-zinc-200">Server-Blind Recovery</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        Zero-knowledge account recovery derived via HKDF prevents admin overrides or recovery key leaks.
+                                        A 3-step ZK recovery wizard using HKDF-SHA256 lets you recover your vault with a recovery key — no server involvement, no admin overrides.
                                     </p>
                                 </div>
                             </div>
@@ -129,7 +129,7 @@ export default function Home() {
                                 <div className="space-y-1">
                                     <h4 className="text-sm font-semibold text-zinc-200">Argon2id Server Hashing</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        Server-side authentication hashes are memory-hardened to prevent database dump cracking.
+                                        Your authentication hash is re-hashed server-side with Argon2id — memory-hard and GPU-resistant, protecting you even if the database is breached.
                                     </p>
                                 </div>
                             </div>
@@ -155,7 +155,7 @@ export default function Home() {
                                 <svg className="w-4 h-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                                 </svg>
-                                <span>Open Source</span>
+                                <span>TOTP 2FA</span>
                             </div>
                         </div>
                     </div>
