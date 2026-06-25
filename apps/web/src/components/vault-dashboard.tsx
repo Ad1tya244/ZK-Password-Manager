@@ -1640,7 +1640,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                             <div className="p-4 bg-zinc-900/20 border border-zinc-800 rounded-lg text-xs text-zinc-400">
                                 <div className="flex justify-between items-center">
                                     <span>Application Version</span>
-                                    <span className="font-mono text-zinc-300">1.0.0</span>
+                                    <span className="font-mono text-zinc-300">2.4.1</span>
                                 </div>
                             </div>
                         </div>
