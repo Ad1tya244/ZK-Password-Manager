@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const authUser = await getAuthUser(request);
-        const isReconfigure = !!(authUser && authUser.username.toLowerCase() === username.toLowerCase());
+        const isReconfigure = !!(secret && authUser && authUser.username.toLowerCase() === username.toLowerCase());
 
         const { user } = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
 

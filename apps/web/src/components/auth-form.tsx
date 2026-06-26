@@ -42,6 +42,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const success = params.get("success");
+        const errParam = params.get("error");
         if (success === "password-changed") {
             setStatusMessage("Master password changed successfully. Please sign in again.");
             window.history.replaceState({}, "", "/");
@@ -50,6 +51,9 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
             window.history.replaceState({}, "", "/");
         } else if (success === "2fa-reconfigured") {
             setStatusMessage("Two-Factor Authentication reconfigured successfully. Please sign in again.");
+            window.history.replaceState({}, "", "/");
+        } else if (errParam === "session-expired") {
+            setError("Your session has expired. Please sign in again.");
             window.history.replaceState({}, "", "/");
         }
     }, []);
@@ -441,6 +445,9 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                                 required
                                                 autoComplete="new-password"
                                             />
+                                            {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                                                <p className="text-xs text-red-500 mt-1 ml-1 font-medium">Passwords do not match</p>
+                                            )}
                                         </div>
                                     </>
                                 )}

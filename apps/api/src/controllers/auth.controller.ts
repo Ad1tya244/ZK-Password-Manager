@@ -121,7 +121,7 @@ export const verify2fa = async (req: Request, res: Response) => {
 
         const accessTokenCookie = req.cookies.accessToken;
         let isReconfigure = false;
-        if (accessTokenCookie) {
+        if (secret && accessTokenCookie) {
             try {
                 const decoded = verifyToken(accessTokenCookie);
                 if (decoded && typeof decoded === "object") {
