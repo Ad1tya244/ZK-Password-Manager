@@ -64,6 +64,17 @@ All confirmation and alert dialogs are implemented as custom in-app modals match
 *   **Double Verification:** Account Deletion requires both the Master Password and (if enabled) the TOTP token.
 *   **Account Lockout:** Database-enforced 10-minute account lockout after 5 failed login attempts.
 
+### 9. Dedicated Security Architecture Page
+A polished, dedicated Security & Architecture page (`/security`) presents our security guidelines and cryptographic design in a structured, benefit-oriented layout. It details:
+*   **Why** each cryptographic parameter exists (e.g. why we encrypt on your device, why we have server-blind recovery) before describing **how** it works.
+*   The exact algorithms and standards used (PBKDF2-HMAC-SHA256, AES-256-GCM, HKDF-SHA256, Argon2id, and TOTP 2FA) in technical details blocks for auditability.
+
+### 10. Global 401 Session Interceptor & Auto-Logout
+To prevent generic request failure messages or broken states if a session expires or gets invalidated:
+*   A global response interceptor watches for `401 Unauthorized` responses on all core API requests.
+*   On catching a 401 error, it automatically clears the browser's local encryption keys (`EncryptionService.clearSession()`) and reloads the application.
+*   Redirects to the login route with an `error=session-expired` parameter, rendering a red warning banner: *"Your session has expired. Please sign in again."*
+
 ---
 
 ## Architecture
@@ -446,4 +457,4 @@ Browser-native `alert()` and `confirm()` cannot be styled, are visually inconsis
 *   **Team Size:** 1 (Solo Developer & Security Engineer)
 *   **My Role:** Full-Stack Developer & Security Engineer
 *   **Tech Stack:** Next.js 14, React 18, TypeScript, Prisma ORM, MySQL, Web Crypto API, Argon2id, JWT, Upstash Redis, OTPLib, Zod, TurboRepo
-*   **Key Features:** Zero-Knowledge Key Wrapping Architecture, Client-Side AES-GCM 256-bit Encryption, ZK 3-Step Account Recovery Wizard, Mandatory 2FA Verification, DB-Backed Persistent Session Management (deduplication, device info, individual/global revocation, expiry cleanup), Custom Application Modal System, Argon2id Hashing, Zod Schema Validation, Upstash Distributed Rate Limiting, Account Lockouts.
+*   **Key Features:** Zero-Knowledge Key Wrapping Architecture, Client-Side AES-GCM 256-bit Encryption, ZK 3-Step Account Recovery Wizard, Mandatory 2FA Verification, DB-Backed Persistent Session Management (deduplication, device info, individual/global revocation, expiry cleanup), Custom Application Modal System, Argon2id Hashing, Zod Schema Validation, Upstash Distributed Rate Limiting, Account Lockouts, Dedicated Security Architecture Page, Global 401 Session Interceptor & Auto-Logout.

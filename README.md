@@ -63,6 +63,15 @@ Changing the master password only requires re-wrapping the VEK — vault item ci
 ### 5. UI — Custom Application Modals
 All confirmation and alert flows (Logout All Devices, Revoke Session, Delete Account, Regenerate Recovery Key, Reconfigure 2FA, Recovery Key Setup) use a unified custom modal system with a consistent dark design — no native browser `alert()`, `confirm()`, or `prompt()` dialogs.
 
+### 6. Dedicated Security Architecture Page
+A premium, dedicated Security & Architecture page (`/security`) outlines the cryptographic primitives and threat model of the password manager in a structured, benefit-oriented layout. It explains the purpose (why) and execution (how) of local key derivation, client-side encryption, emergency recovery, and infrastructure design.
+
+### 7. Global 401 Session Interceptor & Auto-Logout
+To prevent generic request failure errors inside modals, a global Axios response interceptor intercepts all `401 Unauthorized` responses. If a session expires or is invalidated elsewhere:
+- Wipes the browser's local in-memory keys using `EncryptionService.clearSession()`.
+- Automatically logs the user out and redirects to the login screen with an `error=session-expired` parameter.
+- Renders a clean red warning banner: *"Your session has expired. Please sign in again."*
+
 ---
 
 ## Key Security Architecture Diagrams
