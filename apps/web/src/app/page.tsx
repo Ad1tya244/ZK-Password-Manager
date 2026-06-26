@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import AuthForm from "../components/auth-form";
 import VaultDashboard from "../components/vault-dashboard";
 import { api } from "../lib/api";
@@ -60,17 +61,17 @@ export default function Home() {
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                 </svg>
-                                Cryptographic Vault
+                                Secure Digital Vault
                             </span>
                             <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight mt-4">
                                 ZK Vault
                             </h1>
                             <p className="text-lg text-zinc-400 mt-2 font-medium">
-                                Zero-Knowledge Password Manager
+                                Password security, built around your privacy.
                             </p>
                         </div>
                         <p className="text-zinc-400 text-sm md:text-base leading-relaxed">
-                            A secure-by-default password manager where the server is treated as completely untrusted. All encryption, key derivation, and vault decryption happen locally inside your browser's Web Crypto API — the server never sees your master password or raw keys.
+                            A beautifully designed, secure-by-default vault for all your credentials. Everything is encrypted directly on your device before it ever reaches our servers, ensuring that you—and only you—can access your sensitive data. <Link href="/security" className="text-cyan-400 hover:text-cyan-300 transition-colors font-medium underline underline-offset-4">Learn more about our architecture.</Link>
                         </p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-zinc-800/80">
@@ -82,9 +83,9 @@ export default function Home() {
                                     </svg>
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-sm font-semibold text-zinc-200">Local PBKDF2 Stretching</h4>
+                                    <h4 className="text-sm font-semibold text-zinc-200">Encrypted on Your Device</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        PBKDF2-HMAC-SHA256 (100,000 iterations) derives a KEK from your master password locally. The KEK wraps a random VEK — your password never leaves the browser.
+                                        Your master password never leaves your browser. Strong security keys are generated locally on your device to lock and unlock your credentials.
                                     </p>
                                 </div>
                             </div>
@@ -97,9 +98,9 @@ export default function Home() {
                                     </svg>
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-sm font-semibold text-zinc-200">AES-GCM 256-bit Encryption</h4>
+                                    <h4 className="text-sm font-semibold text-zinc-200">Zero-Knowledge Architecture</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        All vault items are encrypted client-side with a random 256-bit VEK using AES-GCM. Only the encrypted blob, IV, and auth tag are stored on the server.
+                                        We cannot see, access, or share your passwords. Your data is completely unreadable to anyone else, including our server administrators.
                                     </p>
                                 </div>
                             </div>
@@ -112,9 +113,9 @@ export default function Home() {
                                     </svg>
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-sm font-semibold text-zinc-200">Server-Blind Recovery</h4>
+                                    <h4 className="text-sm font-semibold text-zinc-200">Secure Recovery</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        A 3-step ZK recovery wizard using HKDF-SHA256 lets you recover your vault with a recovery key — no server involvement, no admin overrides.
+                                        Create a personal, secure recovery key. Retain full self-custody of your vault, allowing you to safely restore access without server bypasses.
                                     </p>
                                 </div>
                             </div>
@@ -127,9 +128,9 @@ export default function Home() {
                                     </svg>
                                 </div>
                                 <div className="space-y-1">
-                                    <h4 className="text-sm font-semibold text-zinc-200">Argon2id Server Hashing</h4>
+                                    <h4 className="text-sm font-semibold text-zinc-200">Modern Security</h4>
                                     <p className="text-xs text-zinc-500 leading-relaxed">
-                                        Your authentication hash is re-hashed server-side with Argon2id — memory-hard and GPU-resistant, protecting you even if the database is breached.
+                                        Robust account protection with strong server hashing and mandatory multi-factor authentication keeps your credentials safe from breach attempts.
                                     </p>
                                 </div>
                             </div>
