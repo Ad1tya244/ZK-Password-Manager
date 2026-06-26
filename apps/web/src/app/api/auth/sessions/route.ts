@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
         });
 
         return NextResponse.json({
-            sessions: sessions.map((s) => ({
+            sessions: sessions.map((s: any) => ({
                 id: s.id,
                 createdAt: s.createdAt,
                 expiresAt: s.expiresAt,
