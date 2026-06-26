@@ -4,6 +4,7 @@
     "main": "./src/index.ts",
     "types": "./src/index.ts",
     "scripts": {
+        "build": "prisma generate --schema=prisma/schema.prisma",
         "lint": "eslint ."
     },
     "dependencies": {
