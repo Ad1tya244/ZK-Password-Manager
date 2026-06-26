@@ -10,6 +10,13 @@
                 ".next/**",
                 "!.next/cache/**",
                 "src/generated/client/**"
+            ],
+            "env": [
+                "DATABASE_URL",
+                "JWT_SECRET",
+                "UPSTASH_REDIS_REST_URL",
+                "UPSTASH_REDIS_REST_TOKEN",
+                "NODE_ENV"
             ]
         },
         "lint": {},
