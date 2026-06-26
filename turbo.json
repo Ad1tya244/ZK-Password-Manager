@@ -8,8 +8,7 @@
             "outputs": [
                 "dist/**",
                 ".next/**",
-                "!.next/cache/**",
-                "src/generated/client/**"
+                "!.next/cache/**"
             ],
             "env": [
                 "DATABASE_URL",

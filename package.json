@@ -13,10 +13,12 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {
+    "@prisma/client": "^5.22.0",
     "@types/node": "latest",
     "@types/node-fetch": "^2.6.13",
     "node-fetch-commonjs": "^3.3.2",
     "prettier": "latest",
+    "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
     "turbo": "latest",
     "typescript": "^5.9.3"

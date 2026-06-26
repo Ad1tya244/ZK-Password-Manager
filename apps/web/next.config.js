@@ -11,7 +11,7 @@ const nextConfig = {
             "**/*": [
                 "../../node_modules/argon2/prebuilds/**/*",
                 "./node_modules/argon2/prebuilds/**/*",
-                "../../packages/database/src/generated/client/**/*",
+                "../../packages/database/node_modules/.prisma/client/**/*",
                 "../../node_modules/.prisma/client/**/*",
                 "./node_modules/.prisma/client/**/*",
             ],
