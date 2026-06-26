@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     try {
         const items = await vaultService.getVaultItems(authUser.userId);
 
-        const formatted = items.map((item) => ({
+        const formatted = items.map((item: any) => ({
             ...item,
             encryptedBlob: toBase64(item.encryptedBlob as Buffer),
             iv: toBase64(item.iv as Buffer),
