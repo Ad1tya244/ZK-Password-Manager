@@ -290,16 +290,11 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                 newVaultSalt: wrapResult.newVaultSalt
             });
 
-            setPasswordSuccess("Password changed successfully! Logging out...");
-            setChangePasswordStep("idle");
-            
             // Clear locally held session
             EncryptionService.clearSession();
 
-            // Clear state and logout after 2 seconds
-            setTimeout(() => {
-                window.location.reload();
-            }, 2000);
+            // Immediately redirect to login with query param
+            window.location.href = "/?success=password-changed";
         } catch (err: any) {
             setPasswordError(err.response?.data?.error || err.message || "Failed to change master password.");
         } finally {
@@ -407,12 +402,11 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                 token: reconfigTotp,
                 secret: reconfigSecret
             });
-            setReconfigStep("success");
-            setReconfigPassword("");
-            setReconfigSecret("");
-            setReconfigQrUrl("");
-            setReconfigTotp("");
-            loadProfile();
+            // Clear local session
+            EncryptionService.clearSession();
+
+            // Immediately redirect
+            window.location.href = "/?success=2fa-reconfigured";
         } catch (err: any) {
             setReconfigTotpError(err.response?.data?.error || "Verification failed.");
         } finally {

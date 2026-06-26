@@ -28,7 +28,7 @@ export const register = async (req: Request, res: Response) => {
     }
 };
 
-import { generateToken, generateRefreshToken } from "@zk/crypto";
+import { generateToken, generateRefreshToken, verifyToken } from "@zk/crypto";
 import * as QRCode from "qrcode";
 
 export const login = async (req: Request, res: Response) => {
@@ -119,11 +119,41 @@ export const verify2fa = async (req: Request, res: Response) => {
     try {
         const { username, token, secret } = req.body; // 'secret' provided only during setup
 
-        const { isValid, user } = await authService.verifyTwoFactorToken(username, token, secret);
+        const accessTokenCookie = req.cookies.accessToken;
+        let isReconfigure = false;
+        if (accessTokenCookie) {
+            try {
+                const decoded = verifyToken(accessTokenCookie);
+                if (decoded && typeof decoded === "object") {
+                    const { userId, username: sessionUsername } = decoded as { userId: string; username: string };
+                    const tokenHash = crypto.createHash("sha256").update(accessTokenCookie).digest("hex");
+                    const session = await prismaDb.session.findUnique({ where: { tokenHash } });
+                    if (session && session.userId === userId && session.expiresAt > new Date() && sessionUsername.toLowerCase() === username.toLowerCase()) {
+                        isReconfigure = true;
+                    }
+                }
+            } catch (e) {
+                // Ignore decoding or db errors
+            }
+        }
+
+        const { isValid, user } = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
 
         // If enabling (secret present), save it
         if (secret) {
             await authService.enableTwoFactor(username, secret);
+        }
+
+        if (isReconfigure) {
+            // Revoke all active sessions for this user on 2FA reconfiguration
+            await prismaDb.session.deleteMany({
+                where: { userId: user.id }
+            });
+
+            res.clearCookie("refreshToken");
+            res.clearCookie("accessToken");
+
+            return res.json({ message: "Two-Factor Authentication reconfigured successfully. Please sign in again." });
         }
 
         // Revoke any existing active session for this device
@@ -378,7 +408,10 @@ export const recoverAccount = async (req: Request, res: Response) => {
             newVaultSalt
         );
 
-        return res.json({ message: "Account recovered successfully. Please log in with your new password." });
+        res.clearCookie("refreshToken");
+        res.clearCookie("accessToken");
+
+        return res.json({ message: "Account recovered successfully. Please sign in again." });
     } catch (error: any) {
         return res.status(400).json({ error: error.message });
     }

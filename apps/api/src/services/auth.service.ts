@@ -40,23 +40,26 @@ export const generateTwoFactorSecret = (username: string) => {
     return { secret, otpauth };
 };
 
-export const verifyTwoFactorToken = async (username: string, token: string, secret?: string) => {
-    // If secret provided (setup phase), use it. Otherwise fetch from DB (login phase).
-    let secretToVerify = secret;
-
+export const verifyTwoFactorToken = async (
+    username: string,
+    token: string,
+    secret?: string,
+    isReconfigure?: boolean
+) => {
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user) throw new Error("User not found");
 
-    if (!secretToVerify) {
-        if (!user.twoFactorSecret) throw new Error("2FA not enabled for this user");
-        secretToVerify = user.twoFactorSecret;
+    // Prevent overriding/bypassing existing 2FA configuration unless reconfiguring
+    if (user.twoFactorSecret && secret && !isReconfigure) {
+        throw new Error("2FA is already configured for this user");
     }
+
+    const secretToVerify = secret ?? user.twoFactorSecret;
+    if (!secretToVerify) throw new Error("2FA not enabled for this user");
 
     const isValid = authenticator.check(token, secretToVerify);
     if (!isValid) throw new Error("Invalid TOTP code");
 
-    // If verifying for setup (passed secret explicitly), check consistency and don't save yet? 
-    // Actually, usually we verify then save. The controller should handle saving.
     return { isValid, user };
 };
 

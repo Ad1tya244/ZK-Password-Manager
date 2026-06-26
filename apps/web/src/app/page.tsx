@@ -66,13 +66,13 @@ export default function Home() {
                                 ZK Vault
                             </h1>
                             <p className="text-lg text-zinc-400 mt-2 font-medium">
-                                Zero-Knowledge Secure Credentials Manager
+                                Zero-Knowledge Password Manager
                             </p>
                         </div>
                         <p className="text-zinc-400 text-sm md:text-base leading-relaxed">
-                        A secure-by-default password manager where the server is treated as completely untrusted. All encryption, key derivation, and vault decryption happen locally inside your browser's Web Crypto API — the server never sees your master password or raw keys.
+                            A secure-by-default password manager where the server is treated as completely untrusted. All encryption, key derivation, and vault decryption happen locally inside your browser's Web Crypto API — the server never sees your master password or raw keys.
                         </p>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-zinc-800/80">
                             {/* Feature 1 */}
                             <div className="flex gap-4 items-start">

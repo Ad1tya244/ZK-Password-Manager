@@ -121,16 +121,21 @@ export const generateTwoFactorSecret = (username: string) => {
     return { secret, otpauth };
 };
 
-export const verifyTwoFactorToken = async (username: string, token: string, secret?: string) => {
+export const verifyTwoFactorToken = async (
+    username: string,
+    token: string,
+    secret?: string,
+    isReconfigure?: boolean
+) => {
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user) throw new Error("User not found");
 
-    // Prevent overriding/bypassing existing 2FA configuration
-    if (user.twoFactorSecret && secret) {
+    // Prevent overriding/bypassing existing 2FA configuration unless reconfiguring
+    if (user.twoFactorSecret && secret && !isReconfigure) {
         throw new Error("2FA is already configured for this user");
     }
 
-    const secretToVerify = user.twoFactorSecret ?? secret;
+    const secretToVerify = secret ?? user.twoFactorSecret;
     if (!secretToVerify) throw new Error("2FA not enabled for this user");
 
     const isValid = authenticator.check(token, secretToVerify);

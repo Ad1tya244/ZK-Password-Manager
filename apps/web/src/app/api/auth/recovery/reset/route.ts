@@ -42,51 +42,12 @@ export async function POST(request: NextRequest) {
             totpToken
         );
 
-        // Immediately generate access and refresh tokens to log the user in
-        const accessToken = generateToken({ userId: user.id, username: user.username });
-        const refreshToken = generateRefreshToken({ userId: user.id });
-
-        // Save session in database
-        const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
-        const userAgentRaw = request.headers.get("user-agent");
-        const deviceInfo = parseUserAgent(userAgentRaw);
-        await prisma.session.create({
-            data: {
-                userId: user.id,
-                tokenHash,
-                expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
-                deviceInfo,
-            },
-        });
-
         const response = NextResponse.json({
-            message: "Account recovered and logged in successfully",
-            user: {
-                id: user.id,
-                username: user.username,
-                encryptedVEK: user.encryptedVEK ? user.encryptedVEK.toString("base64") : null,
-                vekIV: user.vekIV ? user.vekIV.toString("base64") : null,
-                vekAuthTag: user.vekAuthTag ? user.vekAuthTag.toString("base64") : null,
-                vaultSalt: user.vaultSalt,
-                hasRecovery: !!user.recoveryKeyHash,
-                recoveryConfiguredAt: user.recoveryConfiguredAt,
-            }
+            message: "Account recovered successfully. Please sign in again."
         });
 
-        response.cookies.set("accessToken", accessToken, {
-            httpOnly: true,
-            secure: IS_PROD,
-            sameSite: IS_PROD ? "strict" : "lax",
-            maxAge: 15 * 60,
-            path: "/",
-        });
-        response.cookies.set("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: IS_PROD,
-            sameSite: IS_PROD ? "strict" : "lax",
-            maxAge: 7 * 24 * 60 * 60,
-            path: "/",
-        });
+        response.cookies.delete("accessToken");
+        response.cookies.delete("refreshToken");
 
         return response;
     } catch (error: any) {

@@ -58,6 +58,10 @@ yarn-error.log*
 
 # Agent artifacts (Gemini/Antigravity)
 .gemini
+.agents
+walkthrough.md
+task.md
+implementation_plan.md
 
 # Scratch / one-off scripts
 debug-user.ts

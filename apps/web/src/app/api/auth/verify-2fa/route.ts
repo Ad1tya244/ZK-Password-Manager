@@ -7,6 +7,7 @@ import { rateLimitResponse } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { parseUserAgent } from "@/utils/user-agent";
+import { getAuthUser } from "@/lib/server-auth";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -21,11 +22,30 @@ export async function POST(request: NextRequest) {
     const { username, token, secret } = parsed.data;
 
     try {
-        const { user } = await authService.verifyTwoFactorToken(username, token, secret);
+        const authUser = await getAuthUser(request);
+        const isReconfigure = !!(authUser && authUser.username.toLowerCase() === username.toLowerCase());
+
+        const { user } = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
 
         // If enabling 2FA (secret provided), save it
         if (secret) {
             await authService.enableTwoFactor(username, secret);
+        }
+
+        if (isReconfigure) {
+            // Revoke all active sessions for this user on 2FA reconfiguration
+            await prisma.session.deleteMany({
+                where: { userId: user.id }
+            });
+
+            const response = NextResponse.json({
+                message: "Two-Factor Authentication reconfigured successfully. Please sign in again."
+            });
+
+            response.cookies.delete("accessToken");
+            response.cookies.delete("refreshToken");
+
+            return response;
         }
 
         // Revoke any existing active session for this device

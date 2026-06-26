@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api, AuthResponse } from "../lib/api";
 import { EncryptionService, deriveRecoveryKEK } from "../utils/encryption.utils";
 import { base64ToBuffer } from "@zk/crypto/client";
@@ -38,6 +38,21 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     const [recovery2faSecret, setRecovery2faSecret] = useState("");
     const [recovery2faQrCode, setRecovery2faQrCode] = useState("");
     const [recoveryOtp, setRecoveryOtp] = useState("");
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const success = params.get("success");
+        if (success === "password-changed") {
+            setStatusMessage("Master password changed successfully. Please sign in again.");
+            window.history.replaceState({}, "", "/");
+        } else if (success === "account-recovered") {
+            setStatusMessage("Account recovered successfully. Please sign in again.");
+            window.history.replaceState({}, "", "/");
+        } else if (success === "2fa-reconfigured") {
+            setStatusMessage("Two-Factor Authentication reconfigured successfully. Please sign in again.");
+            window.history.replaceState({}, "", "/");
+        }
+    }, []);
 
     const resetRecoveryStates = () => {
         setRecoveryStep(1);
@@ -312,18 +327,12 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     totpToken: recoveryOtp
                 });
 
-                // Complete login locally
-                const token = res.data.token;
-                localStorage.setItem("token", token);
+                // Clear local session and storage token
+                EncryptionService.clearSession();
+                localStorage.removeItem("token");
 
-                const user = res.data.user;
-                const vekData = (user?.encryptedVEK && user?.vekIV && user?.vekAuthTag)
-                    ? { encryptedVEK: user.encryptedVEK, iv: user.vekIV, authTag: user.vekAuthTag }
-                    : undefined;
-
-                await EncryptionService.initSession(newPassword, user?.vaultSalt || recoveryData.recoveredUsername, vekData);
-
-                onLogin();
+                // Immediately redirect to login with query param
+                window.location.href = "/?success=account-recovered";
             }
         } catch (err: any) {
             console.error("Recovery Wizard Error:", err);

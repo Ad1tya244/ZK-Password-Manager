@@ -47,7 +47,7 @@ Changing the master password only requires re-wrapping the VEK — vault item ci
 ### 3. Session Management
 - Database-backed `Session` table stores SHA-256 hashes of JWT access tokens.
 - Every authenticated request verifies **both** the JWT signature **and** an active session record.
-- Sessions are revoked on: logout, logout-all, master password change, account recovery, and account deletion (cascade).
+- Sessions are revoked on: logout, logout-all, master password change, account recovery, 2FA reconfiguration, and account deletion (cascade).
 - Duplicate sessions for the same device are prevented during login.
 - Expired sessions are cleaned up automatically during authentication.
 - Device information (browser + OS) is parsed from the User-Agent at session creation and stored directly — not re-parsed on every retrieval.
@@ -58,7 +58,7 @@ Changing the master password only requires re-wrapping the VEK — vault item ci
 |------|---------------|----------------|
 | **1 — Verify Identity** | Derive Recovery KEK & hash from recovery key; submit hash | Lookup user by hash; return recovery-wrapped VEK + pre-generate new 2FA |
 | **2 — New Password** | Decrypt VEK with Recovery KEK; re-wrap with new KEK + new salt | (No DB writes yet) |
-| **3 — Force 2FA** | Scan new QR code; submit TOTP | Verify TOTP; atomic transaction: update password hash, wrapped VEK, 2FA secret; revoke all sessions; issue new session |
+| **3 — Force 2FA** | Scan new QR code; submit TOTP | Verify TOTP; atomic transaction: update password hash, wrapped VEK, 2FA secret; revoke all sessions; clear cookies; redirect to login with transient success message |
 
 ### 5. UI — Custom Application Modals
 All confirmation and alert flows (Logout All Devices, Revoke Session, Delete Account, Regenerate Recovery Key, Reconfigure 2FA, Recovery Key Setup) use a unified custom modal system with a consistent dark design — no native browser `alert()`, `confirm()`, or `prompt()` dialogs.

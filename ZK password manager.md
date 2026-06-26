@@ -15,7 +15,7 @@ To achieve both absolute security and user flexibility, the application separate
 *   **Vault Encryption Key (VEK):** A random 256-bit symmetric key generated client-side during registration. This key encrypts all vault items using AES-GCM.
 *   **Key Wrapping:** The VEK is encrypted (wrapped) with the KEK and stored in the database. When the user changes their password, they decrypt the VEK using the old KEK and re-wrap it under a new KEK derived from the new password. This avoids re-encrypting vault items — they remain encrypted under the unchanged VEK.
 *   **Zero-Knowledge Recovery:** A 256-bit high-entropy Recovery Key (64-character hex string) allows the user to derive a Recovery KEK via HKDF-SHA256. This Recovery KEK wraps a copy of the VEK on setup. During recovery, the Recovery KEK decrypts the VEK, allowing the user to set a new master password and re-wrap the VEK without the server ever seeing the keys.
-*   **Mandatory 2FA Setup during Recovery:** Account recovery requires setting up a brand new 2FA configuration in Step 3 of the recovery wizard. The user must scan a new QR code and input a valid TOTP token. Only upon successful verification are the database updates applied transactionally — the old 2FA secret is replaced, the new wrapped VEK/password are saved, and all prior sessions are revoked.
+*   **Mandatory 2FA Setup during Recovery:** Account recovery requires setting up a brand new 2FA configuration in Step 3 of the recovery wizard. The user must scan a new QR code and input a valid TOTP token. Only upon successful verification are the database updates applied transactionally — the old 2FA secret is replaced, the new wrapped VEK/password are saved, all prior sessions are revoked, cookies are cleared, and the user is redirected to the login screen for a fresh login.
 
 ---
 
@@ -38,7 +38,7 @@ A recovery system using a client-side generated 256-bit recovery key. Through HK
 *   The recovery process follows a 3-step wizard: identity verification, new master password creation (with client-side confirmation validation), and mandatory new 2FA setup prior to any database execution.
 
 ### 5. Multi-Factor Authentication (2FA)
-Supports RFC 6238 TOTP. During setup (on the dashboard settings and during account recovery), a QR code is generated via `qrcode` and scanned using authenticator apps (e.g. Google Authenticator). Verification uses `otplib` inside co-located Next.js Route Handlers. Reconfiguring 2FA from settings requires verifying the master password first, and only overwrites the old secret upon successful TOTP verification.
+Supports RFC 6238 TOTP. During setup (on the dashboard settings and during account recovery), a QR code is generated via `qrcode` and scanned using authenticator apps (e.g. Google Authenticator). Verification uses `otplib` inside co-located Next.js Route Handlers. Reconfiguring 2FA from settings requires verifying the master password first, and only overwrites the old secret upon successful TOTP verification. Upon successful reconfiguration, all user sessions are globally revoked, authentication cookies are deleted, the client session is cleared, and the user is redirected back to the login screen with a success banner requiring a fresh login.
 
 ### 6. Persistent Session Management
 A database-backed session validation mechanism with full lifecycle management:
@@ -48,7 +48,7 @@ A database-backed session validation mechanism with full lifecycle management:
 *   Expired sessions are cleaned up automatically during authentication.
 *   Individual logout deletes the current session from the database.
 *   "Logout All Devices" deletes all active sessions globally.
-*   Session revocation is also triggered on: master password change, account recovery, and account deletion (via cascade).
+*   **Session revocation is also triggered on:** master password change, account recovery, 2FA reconfiguration, and account deletion (via cascade). Upon successful password change, account recovery, or 2FA reconfiguration, the client's local session is cleared, all auth cookies are deleted, and the user is redirected to the login screen for a fresh login.
 *   The Active Sessions UI displays friendly device names (e.g. "Chrome on macOS") and clearly marks the current device — without exposing raw session IDs.
 
 ### 7. Custom Application Modal System
@@ -258,9 +258,10 @@ sequenceDiagram
     API->>API: Hash newPassword (Argon2id)
     API->>DB: Atomic transaction:
     Note over DB: - Revoke ALL user sessions<br/>- Save new password hash & salt<br/>- Save new wrapped VEK & vaultSalt<br/>- Store new 2FA secret (replaces old)<br/>- Clear recovery key fields & reset lockout
-    API->>DB: Record new session in Session table (with device info)
-    API-->>Browser: Return new session token & log user in
-    Browser->>User: Redirects to Vault Dashboard
+    API->>API: Clear accessToken & refreshToken cookies
+    API-->>Browser: Return success message
+    Browser->>Browser: Wipe client session (clearSession)
+    Browser->>User: Redirects to Login screen with success banner
 ```
 
 ---
@@ -412,7 +413,7 @@ Parsing User-Agent strings on every session list request is redundant CPU work. 
 The SubtleCrypto API outputs a single buffer with the 16-byte tag appended to the ciphertext. Splitting and storing them separately optimizes relational database schema design and allows indexing on the auth tag independently if needed.
 
 ### 10. How does 2FA work during account recovery?
-During Step 1 of recovery, the server pre-generates a new TOTP secret and QR code. The user scans it in Step 3 and submits the verification code. The old 2FA secret is atomically replaced only after the new code is successfully verified — preventing partial updates.
+During Step 1 of recovery, the server pre-generates a new TOTP secret and QR code. The user scans it in Step 3 and submits the verification code. The old 2FA secret is atomically replaced only after the new code is successfully verified — preventing partial updates. After successful verification, all active sessions are globally revoked, authentication cookies are deleted, the client session is cleared, and the user is redirected to the login page for a fresh login.
 
 ### 11. Can a compromised server decrypt vault items?
 No. The server only holds the encrypted VEK and encrypted vault blobs. The KEK needed to decrypt the VEK is derived from the user's master password, which is never stored on the server.
