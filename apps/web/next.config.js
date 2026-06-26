@@ -5,7 +5,7 @@ const nextConfig = {
     output: "standalone",
     poweredByHeader: false,
     experimental: {
-        serverComponentsExternalPackages: ["argon2"],
+        serverComponentsExternalPackages: ["argon2", "@zk/database"],
         outputFileTracingRoot: path.join(__dirname, "../../"),
         outputFileTracingIncludes: {
             "**/*": [
