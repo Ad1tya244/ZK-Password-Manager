@@ -351,7 +351,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     };
 
     return (
-        <div className="w-full max-w-md bg-[#0c0d0e]/60 border border-zinc-800/80 p-8 rounded-xl relative overflow-hidden shadow-2xl backdrop-blur-sm">
+        <div className="w-full max-w-md bg-[#0c0d0e]/60 border border-zinc-800/80 p-6 md:p-8 rounded-xl relative overflow-hidden shadow-2xl backdrop-blur-sm">
             <h2 className="text-2xl font-bold mb-1.5 text-white text-center tracking-tight font-sans">
                 {isRecovery ? (
                     recoveryStep === 1 ? "Recovery: Step 1" : (recoveryStep === 2 ? "Recovery: Step 2" : "Recovery: Step 3")

@@ -38,7 +38,7 @@ function ConfirmationContent() {
     }
 
     return (
-        <div className="max-w-md w-full p-8 bg-zinc-900/40 border border-zinc-900 rounded-2xl text-center space-y-6 shadow-2xl backdrop-blur-md">
+        <div className="max-w-md w-full p-6 md:p-8 bg-zinc-900/40 border border-zinc-900 rounded-2xl text-center space-y-6 shadow-2xl backdrop-blur-md">
             <div className="flex justify-center">
                 <div className={`w-16 h-16 rounded-2xl flex items-center justify-center border ${iconColor}`}>
                     {iconSvg}
