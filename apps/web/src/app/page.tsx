@@ -36,15 +36,17 @@ export default function Home() {
     }, []);
 
     const handleLogin = () => setIsAuthenticated(true);
-    const handleLogout = async () => {
-        try {
-            await api.post("/auth/logout");
-        } catch (e) {
-            console.error("Logout API failed", e);
-        } finally {
-            EncryptionService.clearSession();
-            setIsAuthenticated(false);
+    const handleLogout = async (typeOrEvent?: any) => {
+        const type = typeOrEvent === "delete" ? "delete" : "logout";
+        if (type === "logout") {
+            try {
+                await api.post("/auth/logout");
+            } catch (e) {
+                console.error("Logout API failed", e);
+            }
         }
+        EncryptionService.clearSession();
+        window.location.href = `/confirmation?type=${type}`;
     };
 
     if (loading) return <main className="p-24 text-center">Loading...</main>;

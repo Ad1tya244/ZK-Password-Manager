@@ -66,7 +66,7 @@ const getAvatarColorClass = (char: string) => {
     return colors[upperChar] || defaultColor;
 };
 
-export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
+export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout" | "delete") => void }) {
     const [items, setItems] = useState<DecryptedVaultItem[]>([]);
     const [hasRecovery, setHasRecovery] = useState(false);
     const [site, setSite] = useState("");
@@ -564,7 +564,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
                 url: "/auth/delete",
                 data: { password: deletePassword, totpToken: deleteTotp }
             });
-            onLogout();
+            onLogout("delete");
         } catch (e: any) {
             setDeleteAccountError(e.response?.data?.error || "Failed to delete account");
             setIsDeleting(false);
@@ -682,7 +682,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: () => void }) {
 
                 {/* Logout Button */}
                 <button
-                    onClick={onLogout}
+                    onClick={() => onLogout()}
                     className="w-full flex items-center gap-2 py-2 text-zinc-400 hover:text-zinc-200 transition-colors text-xs font-semibold"
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
