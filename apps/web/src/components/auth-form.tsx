@@ -38,6 +38,15 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     const [recovery2faSecret, setRecovery2faSecret] = useState("");
     const [recovery2faQrCode, setRecovery2faQrCode] = useState("");
     const [recoveryOtp, setRecoveryOtp] = useState("");
+    const [showManual, setShowManual] = useState(false);
+    const [showRecoveryManual, setShowRecoveryManual] = useState(false);
+
+    const [copiedField, setCopiedField] = useState<string | null>(null);
+    const handleCopy = (text: string, field: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedField(field);
+        setTimeout(() => setCopiedField(null), 2000);
+    };
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -451,12 +460,81 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                                         </div>
                                     </>
                                 )}
-                                {recoveryStep === 3 && (
-                                    <>
-                                        <div className="flex flex-col items-center justify-center mb-5 bg-white p-3 rounded">
-                                            <img src={recovery2faQrCode} alt="2FA QR Code" className="w-40 h-40" />
-                                            <p className="text-[10px] text-zinc-500 mt-1 font-sans font-medium">Scan with Google Authenticator</p>
-                                        </div>
+                                 {recoveryStep === 3 && (
+                                     <>
+                                         <div className="flex flex-col items-center justify-center mb-4 bg-white p-3 rounded">
+                                             {!showRecoveryManual ? (
+                                                 <>
+                                                     <img src={recovery2faQrCode} alt="2FA QR Code" className="w-36 h-36" />
+                                                     <p className="text-[10px] text-zinc-500 mt-1 font-sans font-medium">Scan with Google Authenticator</p>
+                                                     {recovery2faSecret && (
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => setShowRecoveryManual(true)}
+                                                             className="text-[10px] text-cyan-600 hover:text-cyan-700 transition-colors mt-2 font-semibold underline underline-offset-2"
+                                                         >
+                                                             Can't scan? Copy setup key instead
+                                                         </button>
+                                                     )}
+                                                 </>
+                                             ) : (
+                                                 <div className="w-full text-left space-y-2">
+                                                     <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider text-center mb-1">Manual 2FA Setup</span>
+                                                     
+                                                     {/* Username */}
+                                                     <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded border border-gray-100">
+                                                         <div className="min-w-0 flex-1">
+                                                             <span className="block text-[8px] font-semibold text-gray-400 uppercase tracking-widest leading-tight">Username</span>
+                                                             <code className="block text-xs font-mono font-bold text-zinc-800 truncate mt-0.5 select-all">ZK Password Manager: {(recoveryData?.recoveredUsername || recoveryUsername)}</code>
+                                                         </div>
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => handleCopy(`ZK Password Manager: ${(recoveryData?.recoveredUsername || recoveryUsername)}`, "username")}
+                                                             className="p-1 hover:bg-gray-200/60 rounded text-gray-500 hover:text-gray-700 transition-colors shrink-0"
+                                                             title="Copy Username"
+                                                         >
+                                                             {copiedField === "username" ? (
+                                                                 <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">Copied!</span>
+                                                             ) : (
+                                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                                 </svg>
+                                                             )}
+                                                         </button>
+                                                     </div>
+
+                                                     {/* Setup Key */}
+                                                     <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded border border-gray-100">
+                                                         <div className="min-w-0 flex-1">
+                                                             <span className="block text-[8px] font-semibold text-gray-400 uppercase tracking-widest leading-tight">Setup Key</span>
+                                                             <code className="block text-xs font-mono font-bold text-zinc-800 break-all whitespace-pre-wrap mt-0.5 select-all">{recovery2faSecret}</code>
+                                                         </div>
+                                                         <button
+                                                             type="button"
+                                                             onClick={() => handleCopy(recovery2faSecret, "secret")}
+                                                             className="p-1 hover:bg-gray-200/60 rounded text-gray-500 hover:text-gray-700 transition-colors shrink-0"
+                                                             title="Copy Setup Key"
+                                                         >
+                                                             {copiedField === "secret" ? (
+                                                                 <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">Copied!</span>
+                                                             ) : (
+                                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                                 </svg>
+                                                             )}
+                                                         </button>
+                                                     </div>
+
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => setShowRecoveryManual(false)}
+                                                         className="block text-[10px] text-cyan-600 hover:text-cyan-700 transition-colors mt-2 font-semibold underline underline-offset-2 mx-auto text-center"
+                                                     >
+                                                         Scan QR Code instead
+                                                     </button>
+                                                 </div>
+                                             )}
+                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider ml-0.5 block">Verification Code</label>
                                             <input
@@ -550,9 +628,77 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                 )}
 
                 {qrCode && (
-                    <div className="flex flex-col items-center justify-center mb-5 bg-white p-3 rounded">
-                        <img src={qrCode} alt="2FA QR Code" className="w-40 h-40" />
-                        <p className="text-[10px] text-gray-500 mt-1 font-medium">Scan with Authenticator App</p>
+                    <div className="flex flex-col items-center justify-center mb-4 bg-white p-3 rounded">
+                        {!showManual ? (
+                            <>
+                                <img src={qrCode} alt="2FA QR Code" className="w-36 h-36" />
+                                <p className="text-[10px] text-gray-500 mt-1 font-medium">Scan with Authenticator App</p>
+                                {secret && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowManual(true)}
+                                        className="text-[10px] text-cyan-600 hover:text-cyan-700 transition-colors mt-2 font-semibold underline underline-offset-2"
+                                    >
+                                        Can't scan? Copy setup key instead
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <div className="w-full text-left space-y-2">
+                                <span className="block text-[9px] font-bold text-gray-400 uppercase tracking-wider text-center mb-1">Manual 2FA Setup</span>
+                                
+                                {/* Username */}
+                                <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded border border-gray-100">
+                                    <div className="min-w-0 flex-1">
+                                        <span className="block text-[8px] font-semibold text-gray-400 uppercase tracking-widest leading-tight">Username</span>
+                                        <code className="block text-xs font-mono font-bold text-zinc-800 truncate mt-0.5 select-all">ZK Password Manager: {username}</code>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopy(`ZK Password Manager: ${username}`, "username")}
+                                        className="p-1 hover:bg-gray-200/60 rounded text-gray-500 hover:text-gray-700 transition-colors shrink-0"
+                                        title="Copy Username"
+                                    >
+                                        {copiedField === "username" ? (
+                                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">Copied!</span>
+                                        ) : (
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Setup Key */}
+                                <div className="flex items-center justify-between gap-3 bg-gray-50 p-2 rounded border border-gray-100">
+                                    <div className="min-w-0 flex-1">
+                                        <span className="block text-[8px] font-semibold text-gray-400 uppercase tracking-widest leading-tight">Setup Key</span>
+                                        <code className="block text-xs font-mono font-bold text-zinc-800 break-all whitespace-pre-wrap mt-0.5 select-all">{secret}</code>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCopy(secret, "secret")}
+                                        className="p-1 hover:bg-gray-200/60 rounded text-gray-500 hover:text-gray-700 transition-colors shrink-0"
+                                        title="Copy Setup Key"
+                                    >
+                                        {copiedField === "secret" ? (
+                                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded">Copied!</span>
+                                        ) : (
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowManual(false)}
+                                    className="block text-[10px] text-cyan-600 hover:text-cyan-700 transition-colors mt-2 font-semibold underline underline-offset-2 mx-auto text-center"
+                                >
+                                    Scan QR Code instead
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
 

@@ -153,6 +153,13 @@ export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout
     const [reconfigTotp, setReconfigTotp] = useState("");
     const [reconfigTotpError, setReconfigTotpError] = useState("");
     const [isVerifyingReconfig, setIsVerifyingReconfig] = useState(false);
+    const [showReconfigManual, setShowReconfigManual] = useState(false);
+    const [reconfigCopiedField, setReconfigCopiedField] = useState<string | null>(null);
+    const handleReconfigCopy = (text: string, field: string) => {
+        navigator.clipboard.writeText(text);
+        setReconfigCopiedField(field);
+        setTimeout(() => setReconfigCopiedField(null), 2000);
+    };
 
     // Custom confirm and alert modal states
     const [confirmModal, setConfirmModal] = useState<{
@@ -1612,19 +1619,83 @@ export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout
                                 )}
 
                                 {reconfigStep === "scan-qr" && (
-                                    <div className="space-y-4 pt-2 border-t border-zinc-800/40">
-                                        <p className="text-[10px] text-zinc-400">Scan this QR code with Google Authenticator or your password manager, then enter the 6-digit verification code below.</p>
-                                        
-                                        {reconfigQrUrl && (
-                                            <div className="flex flex-col items-center p-3 bg-white rounded-lg w-fit mx-auto">
-                                                <img src={reconfigQrUrl} alt="2FA QR Code" className="w-40 h-40" />
-                                            </div>
-                                        )}
+                                     <div className="space-y-4 pt-2 border-t border-zinc-800/40">
+                                         <p className="text-[10px] text-zinc-400">Scan this QR code with Google Authenticator or your password manager, then enter the 6-digit verification code below.</p>
+                                         
+                                         {!showReconfigManual ? (
+                                             <div className="flex flex-col items-center justify-center">
+                                                 {reconfigQrUrl && (
+                                                     <div className="flex flex-col items-center p-3 bg-white rounded-lg w-fit mx-auto mb-2 animate-fade-in">
+                                                         <img src={reconfigQrUrl} alt="2FA QR Code" className="w-36 h-36" />
+                                                     </div>
+                                                 )}
+                                                 {reconfigSecret && (
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => setShowReconfigManual(true)}
+                                                         className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors font-semibold underline underline-offset-2 mx-auto text-center"
+                                                     >
+                                                         Can't scan? Copy setup key instead
+                                                     </button>
+                                                 )}
+                                             </div>
+                                         ) : (
+                                             <div className="w-full text-left space-y-2 max-w-sm mx-auto animate-fade-in">
+                                                 <span className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider text-center mb-1">Manual 2FA Setup</span>
+                                                 
+                                                 {/* Username */}
+                                                 <div className="flex items-center justify-between gap-3 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                                                     <div className="min-w-0 flex-1">
+                                                         <span className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-widest leading-tight">Username</span>
+                                                         <code className="block text-xs font-mono font-bold text-zinc-350 truncate mt-0.5 select-all">ZK Password Manager: {currentUser}</code>
+                                                     </div>
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => handleReconfigCopy(`ZK Password Manager: ${currentUser}`, "username")}
+                                                         className="p-1.5 hover:bg-zinc-900 rounded text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
+                                                         title="Copy Username"
+                                                     >
+                                                         {reconfigCopiedField === "username" ? (
+                                                             <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">Copied!</span>
+                                                         ) : (
+                                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                             </svg>
+                                                         )}
+                                                     </button>
+                                                 </div>
 
-                                        <div className="bg-zinc-950 border border-zinc-800 p-2.5 rounded text-center">
-                                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest mb-0.5">Secret Key (Manual Entry)</p>
-                                            <code className="text-xs text-zinc-300 select-all font-mono">{reconfigSecret}</code>
-                                        </div>
+                                                 {/* Setup Key */}
+                                                 <div className="flex items-center justify-between gap-3 bg-zinc-950 p-2.5 rounded-lg border border-zinc-800">
+                                                     <div className="min-w-0 flex-1">
+                                                         <span className="block text-[8px] font-semibold text-zinc-500 uppercase tracking-widest leading-tight">Setup Key</span>
+                                                         <code className="block text-xs font-mono font-bold text-zinc-300 break-all whitespace-pre-wrap mt-0.5 select-all">{reconfigSecret}</code>
+                                                     </div>
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => handleReconfigCopy(reconfigSecret, "secret")}
+                                                         className="p-1.5 hover:bg-zinc-900 rounded text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
+                                                         title="Copy Setup Key"
+                                                     >
+                                                         {reconfigCopiedField === "secret" ? (
+                                                             <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20">Copied!</span>
+                                                         ) : (
+                                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                             </svg>
+                                                         )}
+                                                     </button>
+                                                 </div>
+
+                                                 <button
+                                                     type="button"
+                                                     onClick={() => setShowReconfigManual(false)}
+                                                     className="block text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors mt-2 font-semibold underline underline-offset-2 mx-auto text-center"
+                                                 >
+                                                     Scan QR Code instead
+                                                 </button>
+                                             </div>
+                                         )}
 
                                         <form onSubmit={handleReconfig2faVerify} className="space-y-3">
                                             <div className="space-y-1">
