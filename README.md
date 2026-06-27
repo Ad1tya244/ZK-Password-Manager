@@ -1,5 +1,7 @@
 # Zero-Knowledge Password Manager
 
+**Production URL**: [zk-password-vault.vercel.app](https://zk-password-vault.vercel.app)
+
 A security-first, monorepo password manager implementing a **zero-knowledge cryptographic architecture** — the server is treated as completely untrusted. All vault encryption, key derivation, and recovery operations are performed entirely client-side using the native Web Crypto API. The backend never handles plaintext credentials, master passwords, or raw key material.
 
 ---

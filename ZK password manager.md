@@ -1,5 +1,7 @@
 # Zero-Knowledge Password Manager
 
+**Production URL**: [zk-password-vault.vercel.app](https://zk-password-vault.vercel.app)
+
 ## Elevator Pitch
 The Zero-Knowledge Password Manager is a security-first, monorepo web application that implements local client-side AES-GCM 256-bit vault encryption, Argon2id master password hashing, TOTP-based multi-factor authentication, and a robust database-backed session management system. Built using Next.js 14 (App Router) with co-located API Route Handlers, the system enforces a strict threat model where the server is treated as completely untrusted — plaintext credentials, master passwords, and raw key material can never be accessed, decrypted, or compromised even in the event of a full database breach.
 
