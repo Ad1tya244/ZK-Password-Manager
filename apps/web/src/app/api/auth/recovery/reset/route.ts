@@ -6,7 +6,6 @@ import { rateLimitResponse } from "@/lib/rate-limit";
 import { generateToken, generateRefreshToken } from "@zk/crypto";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
-import { parseUserAgent } from "@/utils/user-agent";
 
 const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 const IS_PROD = process.env.NODE_ENV === "production";

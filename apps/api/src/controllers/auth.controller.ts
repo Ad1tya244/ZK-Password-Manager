@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import * as authService from "../services/auth.service";
 import crypto from "crypto";
 import { PrismaClient } from "@zk/database";
-import { parseUserAgent } from "../utils/user-agent";
 import { authenticator } from "@otplib/preset-default";
 
 const prismaDb = new PrismaClient();
@@ -70,7 +69,7 @@ export const login = async (req: Request, res: Response) => {
         // Save session in database
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
         const userAgentRaw = req.headers["user-agent"];
-        const deviceInfo = parseUserAgent(userAgentRaw);
+        const deviceInfo = userAgentRaw || "Unknown Device";
         await prismaDb.session.create({
             data: {
                 userId: user.id,
@@ -201,7 +200,7 @@ export const verify2fa = async (req: Request, res: Response) => {
         // Save session in database
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
         const userAgentRaw = req.headers["user-agent"];
-        const deviceInfo = parseUserAgent(userAgentRaw);
+        const deviceInfo = userAgentRaw || "Unknown Device";
         await prismaDb.session.create({
             data: {
                 userId: user.id,

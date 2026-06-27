@@ -6,7 +6,6 @@ import * as authService from "@/lib/services/auth.service";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
-import { parseUserAgent } from "@/utils/user-agent";
 import { getAuthUser } from "@/lib/server-auth";
 import { authenticator } from "@otplib/preset-default";
 
@@ -98,7 +97,7 @@ export async function POST(request: NextRequest) {
         // Persist session to database
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
         const userAgentRaw = request.headers.get("user-agent");
-        const deviceInfo = parseUserAgent(userAgentRaw);
+        const deviceInfo = userAgentRaw || "Unknown Device";
         await prisma.session.create({
             data: {
                 userId: user.id,

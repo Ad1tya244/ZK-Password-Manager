@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, VaultItem } from "../lib/api";
-import { DecryptedVaultItem } from "@zk/shared";
+import { DecryptedVaultItem, parseUserAgent } from "@zk/shared";
 import { EncryptionService } from "../utils/encryption.utils";
 import { analyzePasswordStrength, StrengthResult } from "../utils/password-strength";
 import RecoverySetup from "./auth/recovery-setup";
@@ -64,6 +64,18 @@ const getAvatarColorClass = (char: string) => {
     const defaultColor = "bg-zinc-900 border-zinc-800 text-zinc-300";
     const upperChar = char.toUpperCase();
     return colors[upperChar] || defaultColor;
+};
+
+const formatDeviceInfo = (deviceInfoStr: string | undefined | null) => {
+    if (!deviceInfoStr) return "Unknown Device";
+    const meta = parseUserAgent(deviceInfoStr);
+    if (meta.browser === "Unknown" || meta.os === "Unknown") {
+        if (deviceInfoStr.includes(" on ")) {
+            return deviceInfoStr;
+        }
+        return "Unknown Device";
+    }
+    return `${meta.browser} on ${meta.os}`;
 };
 
 export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout" | "delete") => void }) {
@@ -332,7 +344,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout
             title: isCurrent ? "Revoke Current Session" : "Revoke Session",
             message: isCurrent 
                 ? "Are you sure you want to revoke your current session? This will immediately log you out of this device."
-                : `Are you sure you want to revoke this active session (${sessionObj?.deviceInfo || "Unknown Device"})? The associated device will be logged out immediately.`,
+                : `Are you sure you want to revoke this active session (${formatDeviceInfo(sessionObj?.deviceInfo)})? The associated device will be logged out immediately.`,
             confirmText: "Revoke Session",
             cancelText: "Cancel",
             type: "danger",
@@ -1812,7 +1824,7 @@ export default function VaultDashboard({ onLogout }: { onLogout: (type?: "logout
                                             <div key={session.id} className="flex justify-between items-center p-2.5 bg-zinc-950/40 border border-zinc-800 rounded text-xs font-mono">
                                                 <div className="space-y-0.5">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-xs font-sans font-semibold text-zinc-200">{session.deviceInfo || "Unknown Device"}</span>
+                                                        <span className="text-xs font-sans font-semibold text-zinc-200">{formatDeviceInfo(session.deviceInfo)}</span>
                                                         {session.isCurrent && (
                                                             <span className="px-1.5 py-0.2 bg-cyan-900/40 text-cyan-400 border border-cyan-800/40 rounded text-[9px] font-sans font-bold">
                                                                 This Device

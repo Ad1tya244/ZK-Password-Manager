@@ -5,7 +5,6 @@ import { validateBody } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
 import { generateToken, generateRefreshToken } from "@zk/crypto";
 import crypto from "crypto";
-import { parseUserAgent } from "@/utils/user-agent";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 
@@ -51,7 +50,7 @@ export async function POST(request: NextRequest) {
         // Save new session
         const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
         const userAgentRaw = request.headers.get("user-agent");
-        const deviceInfo = parseUserAgent(userAgentRaw);
+        const deviceInfo = userAgentRaw || "Unknown Device";
         await prisma.session.create({
             data: {
                 userId: user.id,
