@@ -305,3 +305,46 @@ export const changeUserPassword = async (
         },
     });
 };
+
+export const checkUsernameAvailability = async (username: string) => {
+    const existingUser = await prisma.user.findUnique({ where: { username } });
+    if (existingUser) {
+        throw new Error("Username already taken");
+    }
+    const vaultSalt = randomBytes(16).toString("hex");
+    return { available: true, vaultSalt };
+};
+
+export const completeRegistration = async (
+    username: string,
+    password: string,
+    vaultSalt: string,
+    twoFactorSecret: string,
+    encryptedVEK: Buffer,
+    vekIV: Buffer,
+    vekAuthTag: Buffer
+) => {
+    return await prisma.$transaction(async (tx) => {
+        const existingUser = await tx.user.findUnique({ where: { username } });
+        if (existingUser) {
+            throw new Error("Username already taken");
+        }
+
+        const { hash, salt } = await hashPassword(password);
+
+        const user = await tx.user.create({
+            data: {
+                username,
+                passwordHash: hash,
+                salt,
+                vaultSalt,
+                twoFactorSecret,
+                encryptedVEK,
+                vekIV,
+                vekAuthTag,
+            },
+        });
+
+        return user;
+    });
+};

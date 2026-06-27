@@ -10,7 +10,7 @@ export const RegisterSchema = z.object({
         .min(3, "Username must be at least 3 characters")
         .max(50, "Username must be at most 50 characters")
         .regex(ALPHANUMERIC_REGEX, "Username must contain only letters and numbers"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    password: z.string().min(8, "Password must be at least 8 characters").optional(),
 });
 
 export const LoginSchema = z.object({
@@ -26,6 +26,11 @@ export const Verify2faSchema = z.object({
     username: z.string().min(1, "Username is required"),
     token: z.string().regex(SIX_DIGITS_REGEX, "2FA token must be exactly 6 digits"),
     secret: z.string().optional(),
+    password: z.string().optional(),
+    vaultSalt: z.string().optional(),
+    encryptedVEK: z.string().optional(),
+    vekIV: z.string().optional(),
+    vekAuthTag: z.string().optional(),
 });
 
 export const VerifyPasswordSchema = z.object({

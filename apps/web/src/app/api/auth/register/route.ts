@@ -7,11 +7,11 @@ export async function POST(request: NextRequest) {
     const parsed = await validateBody(request, RegisterSchema);
     if (!parsed.success) return parsed.response;
 
-    const { username, password } = parsed.data;
+    const { username } = parsed.data;
 
     try {
-        const user = await authService.registerUser(username, password);
-        return NextResponse.json(user, { status: 201 });
+        const result = await authService.checkUsernameAvailability(username);
+        return NextResponse.json(result, { status: 200 });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 400 });
     }

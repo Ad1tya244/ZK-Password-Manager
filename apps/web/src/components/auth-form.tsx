@@ -40,6 +40,7 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
     const [recoveryOtp, setRecoveryOtp] = useState("");
     const [showManual, setShowManual] = useState(false);
     const [showRecoveryManual, setShowRecoveryManual] = useState(false);
+    const [vaultSalt, setVaultSalt] = useState("");
 
     const [copiedField, setCopiedField] = useState<string | null>(null);
     const handleCopy = (text: string, field: string) => {
@@ -183,7 +184,8 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                         return;
                     }
 
-                    await api.post("/auth/register", { username, password });
+                    const regRes = await api.post<{ available: boolean, vaultSalt: string }>("/auth/register", { username });
+                    setVaultSalt(regRes.data.vaultSalt);
 
                     // Step 2: Get 2FA Secret & QR Code
                     const res = await api.post<{ secret: string, qrCodeUrl: string }>("/auth/enable-2fa", { username });
@@ -192,7 +194,9 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                     setStatusMessage("Scan this QR Code with Google Authenticator");
                     setLoading(false);
                 } else {
-                    // Step 3: Verify Setup
+                    // Step 3: Verify Setup and Atomic Registration
+                    const vekResult = await EncryptionService.initSession(password, vaultSalt, undefined);
+
                     const res = await api.post<AuthResponse & {
                         user?: {
                             vaultSalt: string;
@@ -200,18 +204,16 @@ export default function AuthForm({ onLogin }: { onLogin: () => void }) {
                             vekIV?: string;
                             vekAuthTag?: string;
                         }
-                    }>("/auth/verify-2fa", { username, token: otp, secret });
-
-                    const user = res.data.user;
-                    const vekData = (user?.encryptedVEK && user?.vekIV && user?.vekAuthTag)
-                        ? { encryptedVEK: user.encryptedVEK, iv: user.vekIV, authTag: user.vekAuthTag }
-                        : undefined;
-
-                    const vekResult = await EncryptionService.initSession(password, user?.vaultSalt || username, vekData);
-
-                    if (vekResult) {
-                        await saveVaultKey(vekResult);
-                    }
+                    }>("/auth/verify-2fa", {
+                        username,
+                        token: otp,
+                        secret,
+                        password,
+                        vaultSalt,
+                        encryptedVEK: vekResult?.encryptedVEK,
+                        vekIV: vekResult?.iv,
+                        vekAuthTag: vekResult?.authTag
+                    });
 
                     onLogin();
                 }

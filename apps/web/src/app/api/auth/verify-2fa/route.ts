@@ -8,8 +8,10 @@ import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { parseUserAgent } from "@/utils/user-agent";
 import { getAuthUser } from "@/lib/server-auth";
+import { authenticator } from "@otplib/preset-default";
 
 const IS_PROD = process.env.NODE_ENV === "production";
+const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 
 export async function POST(request: NextRequest) {
     const ip = request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "unknown";
@@ -19,33 +21,58 @@ export async function POST(request: NextRequest) {
     const parsed = await validateBody(request, Verify2faSchema);
     if (!parsed.success) return parsed.response;
 
-    const { username, token, secret } = parsed.data;
+    const { username, token, secret, password, vaultSalt, encryptedVEK, vekIV, vekAuthTag } = parsed.data;
 
     try {
-        const authUser = await getAuthUser(request);
-        const isReconfigure = !!(secret && authUser && authUser.username.toLowerCase() === username.toLowerCase());
+        let user;
 
-        const { user } = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
+        if (password) {
+            if (!secret) {
+                return NextResponse.json({ error: "Missing 2FA secret" }, { status: 400 });
+            }
+            const isValid = authenticator.check(token, secret);
+            if (!isValid) {
+                return NextResponse.json({ error: "Invalid TOTP code" }, { status: 400 });
+            }
+            if (!vaultSalt || !encryptedVEK || !vekIV || !vekAuthTag) {
+                return NextResponse.json({ error: "Missing required registration parameters" }, { status: 400 });
+            }
+            user = await authService.completeRegistration(
+                username,
+                password,
+                vaultSalt,
+                secret,
+                toBuffer(encryptedVEK),
+                toBuffer(vekIV),
+                toBuffer(vekAuthTag)
+            );
+        } else {
+            const authUser = await getAuthUser(request);
+            const isReconfigure = !!(secret && authUser && authUser.username.toLowerCase() === username.toLowerCase());
 
-        // If enabling 2FA (secret provided), save it
-        if (secret) {
-            await authService.enableTwoFactor(username, secret);
-        }
+            const result = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
+            user = result.user;
 
-        if (isReconfigure) {
-            // Revoke all active sessions for this user on 2FA reconfiguration
-            await prisma.session.deleteMany({
-                where: { userId: user.id }
-            });
+            // If enabling 2FA (secret provided), save it
+            if (secret) {
+                await authService.enableTwoFactor(username, secret);
+            }
 
-            const response = NextResponse.json({
-                message: "Two-Factor Authentication reconfigured successfully. Please sign in again."
-            });
+            if (isReconfigure) {
+                // Revoke all active sessions for this user on 2FA reconfiguration
+                await prisma.session.deleteMany({
+                    where: { userId: user.id }
+                });
 
-            response.cookies.delete("accessToken");
-            response.cookies.delete("refreshToken");
+                const response = NextResponse.json({
+                    message: "Two-Factor Authentication reconfigured successfully. Please sign in again."
+                });
 
-            return response;
+                response.cookies.delete("accessToken");
+                response.cookies.delete("refreshToken");
+
+                return response;
+            }
         }
 
         // Revoke any existing active session for this device

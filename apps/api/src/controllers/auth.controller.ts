@@ -3,6 +3,7 @@ import * as authService from "../services/auth.service";
 import crypto from "crypto";
 import { PrismaClient } from "@zk/database";
 import { parseUserAgent } from "../utils/user-agent";
+import { authenticator } from "@otplib/preset-default";
 
 const prismaDb = new PrismaClient();
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -12,17 +13,17 @@ const toBuffer = (base64: string) => Buffer.from(base64, "base64");
 
 export const register = async (req: Request, res: Response) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: "Username and password required" });
+        const { username } = req.body;
+        if (!username) {
+            return res.status(400).json({ error: "Username is required" });
         }
         // Basic alphanumeric validation for username
         if (!/^[a-zA-Z0-9]+$/.test(username)) {
             return res.status(400).json({ error: "Username must contain only letters and numbers" });
         }
 
-        const user = await authService.registerUser(username, password);
-        return res.status(201).json(user);
+        const result = await authService.checkUsernameAvailability(username);
+        return res.status(200).json(result);
     } catch (error: any) {
         return res.status(400).json({ error: error.message });
     }
@@ -117,43 +118,64 @@ export const enable2fa = async (req: Request, res: Response) => {
 
 export const verify2fa = async (req: Request, res: Response) => {
     try {
-        const { username, token, secret } = req.body; // 'secret' provided only during setup
+        const { username, token, secret, password, vaultSalt, encryptedVEK, vekIV, vekAuthTag } = req.body;
 
-        const accessTokenCookie = req.cookies.accessToken;
-        let isReconfigure = false;
-        if (secret && accessTokenCookie) {
-            try {
-                const decoded = verifyToken(accessTokenCookie);
-                if (decoded && typeof decoded === "object") {
-                    const { userId, username: sessionUsername } = decoded as { userId: string; username: string };
-                    const tokenHash = crypto.createHash("sha256").update(accessTokenCookie).digest("hex");
-                    const session = await prismaDb.session.findUnique({ where: { tokenHash } });
-                    if (session && session.userId === userId && session.expiresAt > new Date() && sessionUsername.toLowerCase() === username.toLowerCase()) {
-                        isReconfigure = true;
-                    }
-                }
-            } catch (e) {
-                // Ignore decoding or db errors
+        let user;
+        if (password) {
+            if (!secret) {
+                return res.status(400).json({ error: "Missing 2FA secret" });
             }
-        }
+            const isValid = authenticator.check(token, secret);
+            if (!isValid) {
+                return res.status(400).json({ error: "Invalid TOTP code" });
+            }
+            user = await authService.completeRegistration(
+                username,
+                password,
+                vaultSalt,
+                secret,
+                toBuffer(encryptedVEK),
+                toBuffer(vekIV),
+                toBuffer(vekAuthTag)
+            );
+        } else {
+            const accessTokenCookie = req.cookies.accessToken;
+            let isReconfigure = false;
+            if (secret && accessTokenCookie) {
+                try {
+                    const decoded = verifyToken(accessTokenCookie);
+                    if (decoded && typeof decoded === "object") {
+                        const { userId, username: sessionUsername } = decoded as { userId: string; username: string };
+                        const tokenHash = crypto.createHash("sha256").update(accessTokenCookie).digest("hex");
+                        const session = await prismaDb.session.findUnique({ where: { tokenHash } });
+                        if (session && session.userId === userId && session.expiresAt > new Date() && sessionUsername.toLowerCase() === username.toLowerCase()) {
+                            isReconfigure = true;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore decoding or db errors
+                }
+            }
 
-        const { isValid, user } = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
+            const result = await authService.verifyTwoFactorToken(username, token, secret, isReconfigure);
+            user = result.user;
 
-        // If enabling (secret present), save it
-        if (secret) {
-            await authService.enableTwoFactor(username, secret);
-        }
+            // If enabling (secret present), save it
+            if (secret) {
+                await authService.enableTwoFactor(username, secret);
+            }
 
-        if (isReconfigure) {
-            // Revoke all active sessions for this user on 2FA reconfiguration
-            await prismaDb.session.deleteMany({
-                where: { userId: user.id }
-            });
+            if (isReconfigure) {
+                // Revoke all active sessions for this user on 2FA reconfiguration
+                await prismaDb.session.deleteMany({
+                    where: { userId: user.id }
+                });
 
-            res.clearCookie("refreshToken");
-            res.clearCookie("accessToken");
+                res.clearCookie("refreshToken");
+                res.clearCookie("accessToken");
 
-            return res.json({ message: "Two-Factor Authentication reconfigured successfully. Please sign in again." });
+                return res.json({ message: "Two-Factor Authentication reconfigured successfully. Please sign in again." });
+            }
         }
 
         // Revoke any existing active session for this device
