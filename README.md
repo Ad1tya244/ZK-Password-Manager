@@ -52,7 +52,8 @@ Changing the master password only requires re-wrapping the VEK — vault item ci
 - Sessions are revoked on: logout, logout-all, master password change, account recovery, 2FA reconfiguration, and account deletion (cascade).
 - Duplicate sessions for the same device are prevented during login.
 - Expired sessions are cleaned up automatically during authentication.
-- Device information (browser + OS) is parsed from the User-Agent at session creation and stored directly — not re-parsed on every retrieval.
+- Device information (browser + OS) is stored as the raw User-Agent string in the session record, then parsed dynamically into structured metadata (browser, OS, device type) using a shared monorepo utility, which the UI formats for display.
+- Session revocation requests are routed to a dedicated endpoint path (`POST /api/auth/sessions/revoke`) aligned across both Next.js and Express APIs.
 
 ### 4. Zero-Knowledge Account Recovery (3-Step Wizard)
 

@@ -70,3 +70,6 @@ test-recovery.ts
 reproduction_save_vault.ts
 technical_audit_results.txt
 final_checklist.md
+delete-user.ts
+*-tmp.ts
+

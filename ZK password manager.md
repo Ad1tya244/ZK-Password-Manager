@@ -44,14 +44,15 @@ Supports RFC 6238 TOTP. During setup (on the dashboard settings and during accou
 
 ### 6. Persistent Session Management
 A database-backed session validation mechanism with full lifecycle management:
-*   Upon successful login or recovery, a new session is recorded in the `Session` table using a SHA-256 hash of the JWT token, along with parsed device information (browser + OS derived from User-Agent at creation time).
+*   Upon successful login or recovery, a new session is recorded in the `Session` table using a SHA-256 hash of the JWT token, along with the raw User-Agent string from the client header.
 *   All authenticated requests verify both the JWT signature and the existence of the matching session hash in the database.
 *   Login prevents duplicate active sessions for the same device.
 *   Expired sessions are cleaned up automatically during authentication.
 *   Individual logout deletes the current session from the database.
 *   "Logout All Devices" deletes all active sessions globally.
 *   **Session revocation is also triggered on:** master password change, account recovery, 2FA reconfiguration, and account deletion (via cascade). Upon successful password change, account recovery, or 2FA reconfiguration, the client's local session is cleared, all auth cookies are deleted, and the user is redirected to the login screen for a fresh login.
-*   The Active Sessions UI displays friendly device names (e.g. "Chrome on macOS") and clearly marks the current device — without exposing raw session IDs.
+*   The Active Sessions UI dynamically parses the raw User-Agent into structured browser, OS, and device type metadata using a shared monorepo utility and displays friendly device names (e.g. "Chrome on macOS") — without exposing raw session IDs.
+*   Session revocation is routed to a standardized endpoint path (`POST /api/auth/sessions/revoke`) aligned across the Next.js web application and the Express API.
 
 ### 7. Custom Application Modal System
 All confirmation and alert dialogs are implemented as custom in-app modals matching the dark design system — no browser-native `alert()`, `confirm()`, or `prompt()` dialogs are used anywhere in the application. The modal system supports four semantic types:
@@ -166,7 +167,7 @@ The project is structured as a monorepo managed by **TurboRepo**.
 
 ### Data Flows
 
-#### Registration & Initial Key Generation Flow
+#### Registration & Initial Key Generation Flow (Atomic Onboarding)
 ```mermaid
 sequenceDiagram
     autonumber
@@ -176,17 +177,26 @@ sequenceDiagram
     participant DB as MySQL DB
 
     User->>Browser: Enters Username & Master Password
-    Browser->>API: POST /api/auth/register (username, password)
-    API->>API: Hash password (Argon2id)
+    Note over Browser, API: Step 1: Username Availability & Salt Fetch
+    Browser->>API: POST /api/auth/register (username)
+    API->>DB: Check if username exists
     API->>API: Generate random vaultSalt (16 bytes hex)
-    API->>DB: Create User record (passwordHash, vaultSalt)
-    API-->>Browser: Return registration confirmation
-    Browser->>Browser: PBKDF2 derive KEK from Master Password & vaultSalt
-    Browser->>Browser: Generate random VEK (256-bit AES-GCM)
-    Browser->>Browser: Wrap VEK with KEK
-    Browser->>API: POST /api/auth/vek (encryptedVEK, vekIV, vekAuthTag)
-    API->>DB: Save wrapped VEK fields in User record
-    API-->>Browser: Return success (Session initialized)
+    API-->>Browser: Return vaultSalt (no database write yet)
+
+    Note over Browser, API: Step 2: 2FA Setup
+    Browser->>Browser: Derive KEK locally from Master Password & vaultSalt
+    Browser->>Browser: Generate random VEK & encrypt (wrap) it with KEK
+    Browser->>Browser: Generate random TOTP secret & QR code
+    Browser->>User: Displays QR code to scan
+
+    Note over Browser, API: Step 3: Atomic Completion & Verification
+    User->>Browser: Scans QR code & inputs 6-digit TOTP token
+    Browser->>API: POST /api/auth/verify-2fa (username, password, token, secret, vaultSalt, encryptedVEK, vekIV, vekAuthTag)
+    API->>API: Verify TOTP token against secret
+    API->>API: Hash plaintext password using Argon2id
+    API->>DB: Save user atomically (passwordHash, vaultSalt, 2FA secret, wrapped VEK) in a $transaction
+    API->>DB: Create initial session
+    API-->>Browser: Return success (tokens set in cookies)
 ```
 
 #### Authentication & Session Initialization Flow
@@ -320,7 +330,7 @@ combined.set(tag, ciphertext.length);
 
 ### 4. Stale & Duplicate Session Prevention
 *   **Challenge:** Repeated logins or testing created orphaned session records in the database. JWT statelessness meant expired sessions persisted until manual cleanup.
-*   **Solution:** Login now performs an upsert-style operation — it deletes any existing session for the same device before creating a new one. Expired sessions are cleaned up automatically during authentication. The `deviceInfo` field is parsed from User-Agent once at session creation and stored directly, avoiding repeated parsing.
+*   **Solution:** Login now performs an upsert-style operation — it deletes any existing session for the same device before creating a new one. Expired sessions are cleaned up automatically during authentication. The raw User-Agent string is stored directly in the session record, then parsed dynamically into structured metadata (browser, OS, device type) on the client side using a shared monorepo utility. This avoids coupling parser presentation with the backend store.
 
 ### 5. Distributed Fail-Open Rate Limiting
 *   **Challenge:** In-memory rate limiting does not scale across serverless instances. A Redis failure would block all users.
@@ -329,6 +339,18 @@ combined.set(tag, ciphertext.length);
 ### 6. Replacing Native Browser Dialogs
 *   **Challenge:** `alert()`, `confirm()`, and `prompt()` are visually inconsistent with the app's dark design system and cannot be styled or customized.
 *   **Solution:** A unified custom modal system in `VaultDashboard` with semantic types (`danger`, `warning`, `recovery`, `info`), consistent design tokens, and appropriate icons per flow. All confirmation logic is preserved via `onConfirm` callbacks.
+
+### 7. Atomic Onboarding & Single Password Transmission
+*   **Challenge:** In initial registration flows, the plaintext master password was sent to `/auth/register` to check username availability, and then again to `/auth/verify-2fa` to complete configuration. This sent sensitive password material over the network twice and could result in orphaned database records (e.g. if the user abandoned the registration wizard after Step 1 but before completing 2FA).
+*   **Solution:** Refactored the registration process so that Step 1 (`POST /auth/register`) only validates username availability and fetches a random `vaultSalt` without making any database updates. Hashing, 2FA setup verification, and account creation are deferred to Step 3 (`POST /auth/verify-2fa`). All fields (passwordHash, 2FA secret, wrapped VEK) are saved atomically inside a single database transaction (`$transaction`). The plaintext password is only transmitted over the wire exactly once.
+
+### 8. Structured & Accurate Shared Session Device Detection
+*   **Challenge:** Local device parsing utilities in both frontend and backend packages duplicated code and was prone to parsing errors (e.g. Chrome on iOS was detected as Safari or macOS, Edge user-agents containing Safari tokens matched incorrectly, and modern iPadOS Safari user-agents resembling desktop macOS could not be distinguished).
+*   **Solution:** Consolidated parser logic into a single shared utility (`parseUserAgent`) inside `@zk/shared`. The utility parses the User-Agent string to return a structured JSON object (`{ browser, os, device }`). Suffix-based mobile variants (e.g. `CriOS`, `FxiOS`, `EdgiOS`, `OPiOS`, `Edga/`) are fully resolved, and desktop-mimicking iPadOS devices are successfully distinguished by checking touch/mobile capability tokens.
+
+### 9. Active Session Revocation API Route Alignment
+*   **Challenge:** When clicking "Revoke Session" for secondary active sessions, the frontend client requested `POST /api/auth/sessions/revoke`, which was defined in the Express backend router but was incorrectly mapped on the Next.js backend serverless functions as `POST /api/auth/sessions`. This resulted in persistent 404 "Failed to revoke session" errors on Vercel.
+*   **Solution:** Aligned Next.js Route Handlers with the project's standard API endpoints by moving the revocation logic to a new route at `apps/web/src/app/api/auth/sessions/revoke/route.ts` and removing the duplicate handler from `/api/auth/sessions/route.ts`, standardizing payloads, cookie deletions, and error responses.
 
 ---
 
@@ -417,10 +439,10 @@ Keys are held in memory as non-extractable `CryptoKey` objects inside a singleto
 
 ### 7. What metadata is stored in the database per user?
 **User:** `id`, `username`, `passwordHash`, `salt`, `vaultSalt`, `twoFactorSecret`, `failedLoginAttempts`, `lockoutUntil`, wrapped VEK fields, recovery fields, `recoveryConfiguredAt`.  
-**Session:** `id`, `userId`, `tokenHash`, `deviceInfo` (browser + OS, parsed once at creation), `createdAt`, `expiresAt`.
+**Session:** `id`, `userId`, `tokenHash`, `deviceInfo` (raw User-Agent string), `createdAt`, `expiresAt`.
 
-### 8. Why is device info parsed at session creation, not on every retrieval?
-Parsing User-Agent strings on every session list request is redundant CPU work. Storing the parsed result at creation time makes reads O(1) and keeps the data consistent across the session's lifetime.
+### 8. Why is the raw User-Agent stored in the database instead of a preformatted string?
+Storing the raw User-Agent string keeps the database schema clean and decoupled from presentation. The shared parser utility extracts structured metadata (`browser`, `os`, `device`) on-the-fly in the UI. This separation allows future improvements (like device icons, mobile/desktop badges, or detailed analytics) without changing the database schema or running migrations.
 
 ### 9. Why store the authentication tag separately from the ciphertext?
 The SubtleCrypto API outputs a single buffer with the 16-byte tag appended to the ciphertext. Splitting and storing them separately optimizes relational database schema design and allows indexing on the auth tag independently if needed.
